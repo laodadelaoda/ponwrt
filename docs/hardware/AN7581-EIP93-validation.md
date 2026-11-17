@@ -29,41 +29,59 @@ After booting the test image:
 2. Confirm the module is loaded:
    `lsmod | grep eip93` (or verify the built-in driver through dmesg).
 3. Inspect `/proc/crypto` and find the `cbc(aes)` entry whose `driver`
-   contains `eip93`. Record its `priority` and compare it with all other
-   `cbc(aes)` providers. AF_ALG by algorithm name selects the highest-priority
-   registered implementation.
-4. Run `tools/testing/eip93-afalg-aes-cbc-kat.py` on the device with Python 3.
-   It checks that an EIP-93-backed `cbc(aes)` provider is registered and has
-   the highest priority, then performs AES-128-CBC encryption/decryption via
-   AF_ALG. The 1024-byte request exceeds the configured 512-byte AES-128
-   software-fallback threshold; the first block is checked against the NIST
-   SP 800-38A AES-CBC known-answer vector.
-5. Record `/proc/interrupts` before and after repeated AF_ALG runs. Identify
-   the Linux IRQ line associated with the EIP-93 device from the driver's
-   probe output/device name, and verify its interrupt count increases. Do not
-   assume the GIC hardware interrupt number is also the Linux virtual IRQ.
-6. Repeat the AF_ALG test under concurrent CPU load and record throughput,
-   CPU utilization, errors, and interrupt deltas. Compare against a software
-   baseline with the EIP-93 module unavailable/disabled; do not compare a
-   different cipher mode or request size.
+   contains `eip93`. Record its driver name, priority, and registration
+   parameters. The driver source sets `CRYPTO_ALG_KERN_DRIVER_ONLY`, so this
+   implementation is intentionally restricted to kernel Crypto API consumers.
+4. Run `tools/testing/eip93-afalg-aes-cbc-kat.py` with Python 3. It first
+   confirms that the EIP-93 provider is registered, then performs a separate
+   AES-128-CBC known-answer and round-trip test through AF_ALG. **The AF_ALG
+   test is a user-space API baseline, not an EIP-93 hardware test**: the
+   kernel-only driver flag prevents AF_ALG from selecting the EIP-93 provider.
+   The 1024-byte request is deliberately larger than the configured 512-byte
+   AES-128 fallback threshold, but this does not override the kernel-only
+   restriction.
+5. Verify the EIP-93 driver's own Crypto API self-test result in the kernel
+   log when the algorithm is registered. Record `/proc/interrupts` before
+   and after a kernel-side workload that explicitly allocates the EIP-93
+   driver by its driver name (`cbc(aes-eip93)`). Do not use AF_ALG traffic as
+   the hardware workload. Do not assume the GIC hardware interrupt number is
+   also the Linux virtual IRQ.
+6. Benchmark the kernel-side EIP-93 path and a software-only baseline using
+   identical key size, mode, buffer sizes, and concurrency. Record throughput,
+   CPU utilization, errors, and interrupt deltas. The AF_ALG result is reported
+   separately as the user-space baseline.
 
 ## AF_ALG test
 
-The test helper is deliberately independent of OpenSSL. A passing known-answer
-test proves the AF_ALG request returns correct ciphertext/plaintext; combined
-with EIP-93 provider priority and increasing device IRQ counts, it provides
-evidence that requests are reaching the hardware driver. If the driver falls
-back to software for a request, do not count that run as hardware throughput.
+The EIP-93 algorithms in the Linux driver are marked
+`CRYPTO_ALG_KERN_DRIVER_ONLY`. This is a material API boundary: AF_ALG cannot
+select this provider, and the ordinary OpenSSL EVP path does not automatically
+route operations through the Linux kernel Crypto API. Therefore the AF_ALG
+helper validates the user-space AF_ALG path only. It must not be used as proof
+of EIP-93 execution or as EIP-93 throughput evidence.
+
+Hardware execution requires a kernel-side test that explicitly requests the
+driver name `cbc(aes-eip93)`, verifies the known-answer result, and correlates
+the request with EIP-93 IRQ activity. The existing `tcrypt` mode that requests
+generic `cbc(aes)` is not sufficient evidence by itself unless its log proves
+the selected driver name is `cbc(aes-eip93)`.
+
+OpenSSL 3.x must be evaluated separately. A normal `openssl speed -evp
+aes-128-cbc` run is a user-space provider benchmark and does not prove EIP-93
+use. Do not modify OpenSSL or claim EIP-93 acceleration until an explicit,
+supported kernel-crypto integration path is demonstrated.
 
 ## Acceptance gates
 
 - [ ] Kernel config enables EIP-93 and the module is included in the MD image.
 - [ ] Driver probes successfully with no DMA, IRQ, reset, or timeout errors.
 - [ ] `/proc/crypto` registers EIP-93 AES-CBC with expected driver name/priority.
-- [ ] AF_ALG AES-128-CBC encrypt/decrypt known-answer test passes.
-- [ ] EIP-93 IRQ activity is observed during requests above the fallback threshold.
+- [ ] AF_ALG AES-128-CBC user-space known-answer test passes (reported separately).
+- [ ] Kernel-side EIP-93 driver-name test passes its known-answer test.
+- [ ] EIP-93 IRQ activity is observed during kernel-side requests above the fallback threshold.
 - [ ] No kernel warnings, DMA faults, hangs, or data corruption under repeated load.
 - [ ] Hardware throughput/CPU measurements are recorded against a software baseline.
+- [ ] OpenSSL 3.x actual provider path is traced independently; no assumption that EVP uses EIP-93.
 
-Only after these gates pass should OpenSSL 3.x integration be investigated as a
-separate follow-up. OpenSSL is not modified by this validation item.
+OpenSSL 3.x integration remains a separate follow-up. OpenSSL is not modified by
+this validation item.
