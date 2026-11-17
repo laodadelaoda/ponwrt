@@ -8,7 +8,7 @@
  */
 
 #include <crypto/skcipher.h>
-#include <crypto/wait.h>
+#include <linux/crypto.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
