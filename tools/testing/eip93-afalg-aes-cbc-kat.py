@@ -74,12 +74,15 @@ def main():
     if not eip93:
         raise RuntimeError("no EIP-93 cbc(aes) provider found in /proc/crypto")
     priorities = [(int(e.get("priority", "0")), e.get("driver", "?")) for e in entries]
-    best = max((p for p, _ in priorities), default=-1)
+    other_priorities = [
+        p for p, driver in priorities if "eip93" not in driver.lower()
+    ]
     eip_best = max(int(e.get("priority", "0")) for e in eip93)
-    if eip_best <= best and any(p > eip_best for p, driver in priorities if "eip93" not in driver.lower()):
+    other_best = max(other_priorities, default=-1)
+    if eip_best <= other_best:
         raise RuntimeError(
-            "EIP-93 priority %d is below another cbc(aes) provider priority %d"
-            % (eip_best, best)
+            "EIP-93 priority %d is not strictly above other cbc(aes) provider priority %d"
+            % (eip_best, other_best)
         )
 
     print("cbc(aes) providers:")
