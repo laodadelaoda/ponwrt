@@ -16,8 +16,8 @@ KEY = bytes.fromhex("2b7e151628aed2a6abf7158809cf4f3c")
 IV = bytes.fromhex("000102030405060708090a0b0c0d0e0f")
 PLAINTEXT_BLOCK = bytes.fromhex("6bc1bee22e409f96e93d7e117393172a")
 EXPECTED_CIPHERTEXT_BLOCK = bytes.fromhex("7649abac8119b246cee98e9b12e9197d")
-# 1024 bytes forces the configured AES-128 request beyond the 512-byte
-# software-fallback threshold while preserving the NIST first-block vector.
+# Use 1024 bytes to match the EIP-93 large-request test size; this AF_ALG
+# request itself cannot select the kernel-only EIP-93 provider.
 PLAINTEXT = PLAINTEXT_BLOCK + bytes((i * 29 + 7) & 0xff for i in range(1008))
 
 
