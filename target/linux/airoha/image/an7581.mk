@@ -376,6 +376,7 @@ endef
 
 define Device/nokia_xg-040g-md-ubi
   $(call Device/nokia_xg-040g-md-common)
+  DEVICE_PACKAGES += kmod-crypto-hw-eip93
   DEVICE_VARIANT := (UBI)
   DEVICE_DTS := an7581-nokia_xg-040g-md-ubi
   SUPPORTED_DEVICES += nokia,xg-040g-md-ubi-usb-sfp
@@ -385,6 +386,7 @@ TARGET_DEVICES += nokia_xg-040g-md-ubi
 
 define Device/nokia_xg-040g-md-ubi-usb-sfp
   $(call Device/nokia_xg-040g-md-common)
+  DEVICE_PACKAGES += kmod-crypto-hw-eip93
   DEVICE_VARIANT := (UBI-USB-SFP)
   DEVICE_DTS := an7581-nokia_xg-040g-md-ubi-usb-sfp
   SUPPORTED_DEVICES += nokia,xg-040g-md-ubi
