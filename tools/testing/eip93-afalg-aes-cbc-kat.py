@@ -76,7 +76,7 @@ def main():
     priorities = [(int(e.get("priority", "0")), e.get("driver", "?")) for e in entries]
     best = max((p for p, _ in priorities), default=-1)
     eip_best = max(int(e.get("priority", "0")) for e in eip93)
-    if eip_best < best:
+    if eip_best <= best and any(p > eip_best for p, driver in priorities if "eip93" not in driver.lower()):
         raise RuntimeError(
             "EIP-93 priority %d is below another cbc(aes) provider priority %d"
             % (eip_best, best)
