@@ -91,7 +91,8 @@ static int __init eip93_kat_init(void)
 		goto out_buf;
 	}
 
-	skcipher_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG |\n\t\t\t\t      CRYPTO_TFM_REQ_MAY_SLEEP,
+	skcipher_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG |
+				      CRYPTO_TFM_REQ_MAY_SLEEP,
 				      crypto_req_done, &wait);
 	sg_init_one(&src_sg, plain, EIP93_TEST_LEN);
 	sg_init_one(&dst_sg, cipher, EIP93_TEST_LEN);
