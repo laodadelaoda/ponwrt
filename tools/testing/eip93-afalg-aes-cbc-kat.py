@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AN7581 EIP-93 AF_ALG AES-128-CBC known-answer and provider-priority test."""
+"""Check EIP-93 registration and independently test the user-space AF_ALG path."""
 
 import socket
 import struct
