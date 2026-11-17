@@ -73,23 +73,15 @@ def main():
     eip93 = [e for e in entries if "eip93" in e.get("driver", "").lower()]
     if not eip93:
         raise RuntimeError("no EIP-93 cbc(aes) provider found in /proc/crypto")
-    priorities = [(int(e.get("priority", "0")), e.get("driver", "?")) for e in entries]
-    other_priorities = [
-        p for p, driver in priorities if "eip93" not in driver.lower()
-    ]
-    eip_best = max(int(e.get("priority", "0")) for e in eip93)
-    other_best = max(other_priorities, default=-1)
-    if eip_best <= other_best:
-        raise RuntimeError(
-            "EIP-93 priority %d is not strictly above other cbc(aes) provider priority %d"
-            % (eip_best, other_best)
-        )
 
-    print("cbc(aes) providers:")
-    for entry in sorted(entries, key=lambda e: int(e.get("priority", "0")), reverse=True):
+    print("Registered EIP-93 provider(s):")
+    for entry in eip93:
         print("  driver=%s priority=%s" % (
             entry.get("driver", "?"), entry.get("priority", "?")
         ))
+    print("AF_ALG is tested separately as the user-space Crypto API path.")
+    print("The EIP-93 driver marks its algorithms CRYPTO_ALG_KERN_DRIVER_ONLY;")
+    print("an AF_ALG KAT must not be interpreted as proof of EIP-93 execution.")
 
     ciphertext = afalg_crypt(PLAINTEXT, ALG_OP_ENCRYPT)
     if ciphertext[:16] != EXPECTED_CIPHERTEXT_BLOCK:
@@ -98,9 +90,8 @@ def main():
     if recovered != PLAINTEXT:
         raise RuntimeError("AES-CBC decrypt/round-trip check failed")
 
-    print("PASS: AF_ALG AES-128-CBC, 1024-byte request, NIST first block and round-trip")
-    print("NOTE: verify EIP-93 IRQ counter deltas separately in /proc/interrupts")
-
+    print("PASS: AF_ALG AES-128-CBC user-space known-answer and round-trip test")
+    print("NOTE: this validates the AF_ALG path only, not EIP-93 hardware execution")
 
 if __name__ == "__main__":
     try:
