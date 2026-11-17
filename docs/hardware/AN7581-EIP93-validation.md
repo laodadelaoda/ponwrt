@@ -20,6 +20,41 @@ Build the Nokia XG-040G-MD image and confirm the package manifest contains
 The EIP-93 package is added to the MD profiles only; the shared MD/TF common
 profile is intentionally unchanged so TF does not inherit this experiment.
 
+## Driver-pinned kernel AES-CBC test
+
+The repository includes a diagnostic kernel module in
+`tools/testing/eip93-kernel-kat/`. It calls
+`crypto_alloc_skcipher("cbc(aes-eip93)", 0, 0)` and verifies the returned
+driver name before submitting any requests. It uses a 1024-byte AES-128-CBC
+request, above the configured 512-byte AES-128 software-fallback threshold.
+The first ciphertext block is checked against NIST SP 800-38A, and the full
+1024-byte buffer is checked after decrypting it.
+
+Build it against the exact target kernel build tree used for the image:
+
+```sh
+make -C "$KERNEL_BUILD_DIR" M="$PWD/tools/testing/eip93-kernel-kat" modules
+```
+
+Copy `eip93-kernel-kat.ko` to the device. Capture the interrupt counters,
+run the module, and capture them again:
+
+```sh
+cp /proc/interrupts /tmp/eip93-interrupts.before
+insmod ./eip93-kernel-kat.ko
+rmmod eip93-kernel-kat
+cp /proc/interrupts /tmp/eip93-interrupts.after
+diff -u /tmp/eip93-interrupts.before /tmp/eip93-interrupts.after
+```
+
+A passing KAT proves that the explicitly selected EIP-93 driver completed
+correctly for the tested request size. To claim hardware execution, also
+identify the driver's Linux IRQ line from `/proc/interrupts` and confirm its
+counter increases during the test. If the counter does not increase, do not
+claim hardware execution; investigate fallback selection, interrupt routing,
+and the driver completion path. The GIC SPI number is not necessarily the
+Linux IRQ number.
+
 ## Device-side checks
 
 After booting the test image:
@@ -40,12 +75,9 @@ After booting the test image:
    The 1024-byte request is deliberately larger than the configured 512-byte
    AES-128 fallback threshold, but this does not override the kernel-only
    restriction.
-5. Verify the EIP-93 driver's own Crypto API self-test result in the kernel
-   log when the algorithm is registered. Record `/proc/interrupts` before
-   and after a kernel-side workload that explicitly allocates the EIP-93
-   driver by its driver name (`cbc(aes-eip93)`). Do not use AF_ALG traffic as
-   the hardware workload. Do not assume the GIC hardware interrupt number is
-   also the Linux virtual IRQ.
+5. Run the driver-pinned kernel KAT described above. Verify the exact provider
+   name in its PASS line and correlate the request with the driver's Linux IRQ
+   counter. Do not use AF_ALG traffic as the hardware workload.
 6. Benchmark the kernel-side EIP-93 path and a software-only baseline using
    identical key size, mode, buffer sizes, and concurrency. Record throughput,
    CPU utilization, errors, and interrupt deltas. The AF_ALG result is reported
