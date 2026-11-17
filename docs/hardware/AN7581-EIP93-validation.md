@@ -17,6 +17,12 @@ Build the Nokia XG-040G-MD image and confirm the package manifest contains
 `crypto-hw-eip93.ko` is packaged. The package definition selects
 `CONFIG_CRYPTO_HW` and `CONFIG_CRYPTO_DEV_EIP93`.
 
+The Airoha target selects Linux 6.18. Its generic patch
+`target/linux/generic/hack-6.18/926-crypto-eip93-use-AES-fallback-for-small-requests.patch`
+implements the software fallback. For AES-128, requests of 512 bytes or less
+are sent to software; a 1024-byte request is above that cutoff and proceeds
+to the EIP-93 hardware submission path.
+
 The EIP-93 package is added to the MD profiles only; the shared MD/TF common
 profile is intentionally unchanged so TF does not inherit this experiment.
 
