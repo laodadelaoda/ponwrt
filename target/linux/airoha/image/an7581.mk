@@ -371,7 +371,7 @@ define Device/nokia_xg-040g-md-ubi-images
   IMAGE/sysupgrade.itb := append-kernel | \
 	fit gzip $$(KDIR)/image-$$(DEVICE_DTS).dtb external-static-with-rootfs | \
 	append-metadata
-  DEVICE_PACKAGES += fitblk
+  DEVICE_PACKAGES += fitblk kmod-crypto-hw-eip93
 endef
 
 define Device/nokia_xg-040g-md-ubi
