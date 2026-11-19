@@ -10,6 +10,7 @@ on:
       - 'configs/an7581.config'
       - 'configs/release.config'
       - 'patches/pon-userspace/**'
+      - 'patches/pon-drivers/**'
   workflow_dispatch:
 
 permissions:
@@ -97,6 +98,12 @@ jobs:
           assert "return EN7572_BOB_A2_BASE;" in body
           print("EPON 1G mode exists; EN7572 selects A2 BOB profile")
           PY
+
+      - name: Apply EPON REPORT bitmap documentation correction
+        run: |
+          patch --dry-run -p1 -d feeds/pon_drivers < patches/pon-drivers/0001-epon-report-bitmap-register-comment.patch
+          patch -p1 -d feeds/pon_drivers < patches/pon-drivers/0001-epon-report-bitmap-register-comment.patch
+          grep -F 'distinct from the 8-bit queue bitmap encoded in an IEEE MPCP REPORT PDU.' feeds/pon_drivers/airoha-xpon/src/airoha-xpon-epon.c
 
       - name: Apply EPON OAM compatibility patch
         run: |
