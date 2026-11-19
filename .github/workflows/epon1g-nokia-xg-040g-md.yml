@@ -70,16 +70,15 @@ jobs:
           grep -F '.frontend_mode = AIROHA_PON_FRONTEND_MODE_EPON_1G,' feeds/pon_drivers/airoha-xpon/src/airoha-xpon-mode.c
           python3 - <<'PY'
           from pathlib import Path
-          import re
-
           mode = Path("feeds/pon_drivers/airoha-xpon/src/airoha-xpon-mode.c").read_text()
           frontend = Path("feeds/pon_drivers/airoha-pon-frontends/src/airoha-en7572.c").read_text()
           assert "AIROHA_XPON_MODE_EPON_1G" in mode
           assert "AIROHA_PCS_PON_MODE_EPON_1G" in mode
-          match = re.search(r"static int en7572_bob_base\\(enum airoha_pon_frontend_mode mode\\)(.*?)\\n}\\n", frontend, re.S)
-          assert match, "EN7572 BOB mode-selection function not found"
-          body = match.group(1)
-          assert re.search(r"case AIROHA_PON_FRONTEND_MODE_EPON_1G:.*?return EN7572_BOB_A2_BASE;", body, re.S), "EPON 1G must select BOB A2"
+          start = frontend.index("static int en7572_bob_base")
+          end = frontend.index("\\n}", start)
+          body = frontend[start:end]
+          assert "case AIROHA_PON_FRONTEND_MODE_EPON_1G:" in body
+          assert "return EN7572_BOB_A2_BASE;" in body
           print("EPON 1G mode exists; EN7572 selects A2 BOB profile")
           PY
 
