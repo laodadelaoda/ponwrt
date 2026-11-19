@@ -286,15 +286,15 @@ Signed-off-by: pbs05 <27010143+pbs05@users.noreply.github.com>
 +	lockdep_assert_held(&flow_offload_mutex);
 +
 +	/* TC replace and destroy callbacks share flow_offload_mutex with this walk.
-+	 * Collect matching objects before removal so rhashtable iteration continues
-+	 * through every entry in the current bucket.
++	 * A resize can restart the walk at the new table's beginning. Keep each
++	 * matching entry on the removal list only once.
 +	 */
 +	rhashtable_walk_enter(&eth->flow_table, &iter);
 +	rhashtable_walk_start(&iter);
 +	while ((e = rhashtable_walk_next(&iter))) {
 +		if (IS_ERR(e))
 +			continue;
-+		if (e->egress_dev == dev)
++		if (e->egress_dev == dev && list_empty(&e->gc_node))
 +			list_add_tail(&e->gc_node, &remove_list);
 +	}
 +	rhashtable_walk_stop(&iter);
