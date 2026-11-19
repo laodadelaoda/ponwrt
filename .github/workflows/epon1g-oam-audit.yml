@@ -1,0 +1,39 @@
+name: EPON 1G OAM patch audit
+
+on:
+  push:
+    branches:
+      - epon1g-oam-fixes
+    paths:
+      - '.github/workflows/epon1g-oam-audit.yml'
+      - 'patches/pon-userspace/0002-oam-ctc-vlan-and-oui-fail-closed.patch'
+      - 'feeds.conf.default'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  oam-patch-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Fetch exact pinned userspace source
+        run: |
+          git clone --no-checkout https://github.com/pbs05/openwrt-pon-userspace.git feeds/pon_userspace
+          git -C feeds/pon_userspace checkout --detach a903fcc80f4b89f9b9e59a02d3ba1fc5550819a5
+          test "$(git -C feeds/pon_userspace rev-parse HEAD)" = "a903fcc80f4b89f9b9e59a02d3ba1fc5550819a5"
+
+      - name: Check and apply OAM patch
+        run: |
+          patch --dry-run -p1 -d feeds/pon_userspace < patches/pon-userspace/0002-oam-ctc-vlan-and-oui-fail-closed.patch
+          patch -p1 -d feeds/pon_userspace < patches/pon-userspace/0002-oam-ctc-vlan-and-oui-fail-closed.patch
+
+      - name: Run daemon unit tests
+        run: cargo test --locked --manifest-path feeds/pon_userspace/airoha-pon-daemons/src/Cargo.toml

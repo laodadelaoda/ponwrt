@@ -98,6 +98,11 @@ jobs:
           print("EPON 1G mode exists; EN7572 selects A2 BOB profile")
           PY
 
+      - name: Apply EPON OAM compatibility patch
+        run: |
+          patch --dry-run -p1 -d feeds/pon_userspace < patches/pon-userspace/0002-oam-ctc-vlan-and-oui-fail-closed.patch
+          patch -p1 -d feeds/pon_userspace < patches/pon-userspace/0002-oam-ctc-vlan-and-oui-fail-closed.patch
+
       - name: Apply EPON 1G LuCI selector patch
         run: |
           patch --dry-run -p1 -d feeds/pon_userspace < patches/pon-userspace/0001-luci-add-epon-1g-experimental-mode.patch
