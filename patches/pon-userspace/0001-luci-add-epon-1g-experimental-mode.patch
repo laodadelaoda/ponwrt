@@ -1,0 +1,10 @@
+diff --git a/luci-app-pon/htdocs/luci-static/resources/view/pon/config.js b/luci-app-pon/htdocs/luci-static/resources/view/pon/config.js
+--- a/luci-app-pon/htdocs/luci-static/resources/view/pon/config.js
++++ b/luci-app-pon/htdocs/luci-static/resources/view/pon/config.js
+@@ -128,6 +128,7 @@ return view.extend({
+ 		o.value('', _('Driver default'));
+ 		o.value('xgpon', _('XG-PON'));
+ 		o.value('xgspon', _('XGS-PON'));
++		o.value('epon-1g', _('EPON 1G/1G (experimental)'));
+ 		o.value('epon-10g-1g', _('10G-EPON 10G/1G'));
+ 		o.value('epon-10g-10g', _('10G-EPON 10G/10G'));

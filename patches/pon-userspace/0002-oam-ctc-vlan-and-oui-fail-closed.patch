@@ -1,0 +1,82 @@
+diff --git a/airoha-pon-daemons/src/src/oam/ctc.rs b/airoha-pon-daemons/src/src/oam/ctc.rs
+--- a/airoha-pon-daemons/src/src/oam/ctc.rs
++++ b/airoha-pon-daemons/src/src/oam/ctc.rs
+@@ -125,6 +125,12 @@ impl CtcSession {
+         if length < 7 || length > tlv.len() || (length - 7) % 4 != 0 {
+             return Err("CTC information TLV has an invalid length");
+         }
++
++        // Ignore other vendors' organization-specific Information TLVs without
++        // changing the CTC discovery state or replying with our own OUI.
++        if tlv[2..5] != config.ctc_oui {
++            return Ok(None);
++        }
+ 
+         let has_version_list = length > 7;
+         if has_version_list {
+@@ -529,7 +535,3 @@ impl CtcSession {
+-        // The HGU data path preserves OLT-provisioned tags for Linux VLAN and netifd policy.
+-        self.vlan = Some(VlanConfiguration {
+-            object_index: object.index,
+-            mode,
+-            raw: value.to_vec(),
+-        });
+-        SET_OK
++        // Do not acknowledge a VLAN rule that is not applied to the data path.
++        let _ = (object, mode);
++        NO_RESOURCE
+@@ -664,1 +666,1 @@ mod tests {
+-    fn vlan_set_records_object_leaf_result_and_value() {
++    fn vlan_set_is_rejected_until_the_data_path_can_apply_it() {
+@@ -689,5 +691,6 @@ mod tests {
+             "CTC SET object=0x36:0x0001:0x00000001 branch=0xc7 leaf=0x0021 \
+-             length=5 result=0x80 value=0100000064"
++             length=5 result=0x87 value=0100000064"
+         );
+-        assert_eq!(session.snapshot().vlan_ids, vec![100]);
++        assert_eq!(session.snapshot().vlan_mode, None);
++        assert!(session.snapshot().vlan_ids.is_empty());
+     }
+@@ -694,3 +697,14 @@ mod tests {
+ 
++    #[test]
++    fn foreign_information_oui_is_ignored_without_advancing_ctc_state() {
++        let mut session = CtcSession::new();
++        let config = super::super::config::OamConfig::default();
++        let tlv = [INFO_TYPE_ORGANIZATION_SPECIFIC, 7, 0xaa, 0xbb, 0xcc, 1, 0x21];
++
++        assert!(session.handle_information_tlv(&tlv, &config).unwrap().is_none());
++        assert_eq!(session.snapshot().discovery_state, "passive-wait");
++        assert_eq!(session.snapshot().selected_version, None);
++    }
++
+     #[test]
+     fn unsupported_set_records_the_exact_leaf_and_result() {
+diff --git a/airoha-pon-daemons/src/src/oam/ieee.rs b/airoha-pon-daemons/src/src/oam/ieee.rs
+--- a/airoha-pon-daemons/src/src/oam/ieee.rs
++++ b/airoha-pon-daemons/src/src/oam/ieee.rs
+@@ -80,10 +80,22 @@ fn local_information(revision: u16, source_mac: [u8; 6]) -> Vec<u8> {
+     information.push(1);
+     information.extend_from_slice(&revision.to_be_bytes());
+     information.push(0);
+-    // Passive mode advertises Link Event support.
+-    information.push(0x08);
++    // Link Event Notification is not implemented; do not advertise support.
++    information.push(0);
+     information.extend_from_slice(&1500u16.to_be_bytes());
+     information.extend_from_slice(&source_mac[..3]);
+     information.extend_from_slice(&[0; 4]);
+     information
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn local_information_does_not_advertise_unimplemented_link_events() {
++        let information = local_information(1, [0x02, 0, 0, 0, 0, 1]);
++
++        assert_eq!(information[6] & 0x08, 0);
++    }
++}

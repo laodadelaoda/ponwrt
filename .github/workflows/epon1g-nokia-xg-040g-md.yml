@@ -1,0 +1,183 @@
+name: Build Nokia XG-040G-MD EPON 1G (experimental)
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/epon1g-nokia-xg-040g-md.yml'
+      - 'feeds.conf.default'
+      - 'configs/an7581.config'
+      - 'configs/release.config'
+      - 'patches/pon-userspace/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ponwrt-epon1g-master
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build MD UBI image with EPON 1G selector
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+
+      - name: Free build space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo apt-get clean
+
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          packages=(
+            asciidoc autoconf automake autopoint binutils bison build-essential
+            bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk
+            gettext git g++-multilib gcc-multilib gperf help2man intltool
+            libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev
+            libmpfr-dev libncurses-dev libpython3-dev libreadline-dev libssl-dev
+            libtool libyaml-dev lld llvm ninja-build p7zip-full patch pkgconf
+            python3 python3-docutils python3-pip python3-ply python3-pyelftools
+            qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo
+            uglifyjs unzip wget xmlto xxd zlib1g-dev zstd
+          )
+
+          # Retry transient Ubuntu mirror failures (including HTTP 503).
+          for attempt in 1 2 3; do
+            echo "Dependency installation attempt ${attempt}/3"
+            if sudo apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update &&
+               sudo apt-get -o Acquire::Retries=5 -o Acquire::https::Timeout=30 install -y --no-install-recommends "${packages[@]}"; then
+              exit 0
+            fi
+            if [ "${attempt}" -lt 3 ]; then
+              echo "APT mirror/download failed; retrying after backoff" >&2
+              sleep $((attempt * 20))
+            fi
+          done
+
+          echo "Unable to install build dependencies after 3 attempts" >&2
+          exit 1
+
+      - name: Cache source downloads
+        uses: actions/cache@v4
+        with:
+          path: dl
+          key: ponwrt-epon1g-dl-${{ hashFiles('feeds.conf.default', 'configs/an7581.config', 'configs/release.config') }}
+          restore-keys: |
+            ponwrt-epon1g-dl-
+
+      - name: Fetch audited feeds
+        run: |
+          ./scripts/feeds update -a
+          test "$(git -C feeds/pon_drivers rev-parse HEAD)" = "47ad31349807099cf84c8ca9fb1a3f10120ef9ee"
+          test "$(git -C feeds/pon_userspace rev-parse HEAD)" = "$(git -C feeds/pon_userspace rev-parse origin/main)"
+          ./scripts/feeds install -a
+
+      - name: Audit EPON 1G driver and EN7572 calibration profile
+        run: |
+          grep -F '.name = "epon-1g",' feeds/pon_drivers/airoha-xpon/src/airoha-xpon-mode.c
+          grep -F '.frontend_mode = AIROHA_PON_FRONTEND_MODE_EPON_1G,' feeds/pon_drivers/airoha-xpon/src/airoha-xpon-mode.c
+          python3 - <<'PY'
+          from pathlib import Path
+          mode = Path("feeds/pon_drivers/airoha-xpon/src/airoha-xpon-mode.c").read_text()
+          frontend = Path("feeds/pon_drivers/airoha-pon-frontends/src/airoha-en7572.c").read_text()
+          assert "AIROHA_XPON_MODE_EPON_1G" in mode
+          assert "AIROHA_PCS_PON_MODE_EPON_1G" in mode
+          start = frontend.index("static int en7572_bob_base")
+          end = frontend.index("\n}", start)
+          body = frontend[start:end]
+          assert "case AIROHA_PON_FRONTEND_MODE_EPON_1G:" in body
+          assert "return EN7572_BOB_A2_BASE;" in body
+          print("EPON 1G mode exists; EN7572 selects A2 BOB profile")
+          PY
+
+      - name: Apply EPON OAM compatibility patch
+        run: |
+          patch --dry-run -p1 -d feeds/pon_userspace < patches/pon-userspace/0002-oam-ctc-vlan-and-oui-fail-closed.patch
+          patch -p1 -d feeds/pon_userspace < patches/pon-userspace/0002-oam-ctc-vlan-and-oui-fail-closed.patch
+
+      - name: Apply EPON 1G LuCI selector patch
+        run: |
+          patch --dry-run -p1 -d feeds/pon_userspace < patches/pon-userspace/0001-luci-add-epon-1g-experimental-mode.patch
+          patch -p1 -d feeds/pon_userspace < patches/pon-userspace/0001-luci-add-epon-1g-experimental-mode.patch
+          grep -F "o.value('epon-1g', _('EPON 1G/1G (experimental)'));" feeds/pon_userspace/luci-app-pon/htdocs/luci-static/resources/view/pon/config.js
+
+      - name: Configure Nokia XG-040G-MD UBI only
+        run: |
+          ./scripts/kconfig.pl + configs/an7581.config configs/release.config > .config
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path(".config")
+          lines = path.read_text().splitlines()
+          prefix = "CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_"
+          selected = prefix + "nokia_xg-040g-md-ubi"
+          output = []
+          seen = False
+
+          for line in lines:
+              key = None
+              if line.startswith("# " + prefix) and line.endswith(" is not set"):
+                  key = line[2:].removesuffix(" is not set")
+              elif line.startswith(prefix) and "=" in line:
+                  key = line.split("=", 1)[0]
+
+              if key is not None:
+                  if key == selected:
+                      output.append(selected + "=y")
+                      seen = True
+                  else:
+                      output.append("# " + key + " is not set")
+              else:
+                  output.append(line)
+
+          if not seen:
+              output.append(selected + "=y")
+          path.write_text("\n".join(output) + "\n")
+          PY
+          make defconfig
+          grep -Fx "CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi=y" .config
+          if grep -E '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_.*=y$' .config | grep -vF 'CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi=y'; then
+            echo "Unexpected non-MD device profile enabled" >&2
+            exit 1
+          fi
+          grep -E '^CONFIG_PACKAGE_(luci-app-pon|airoha-ponctl|airoha-pond|kmod-airoha-xpon|kmod-airoha-en7572)=' .config
+
+      - name: Download sources
+        run: make download -j"$(nproc)"
+
+      - name: Compile firmware
+        run: make -j"$(nproc)"
+
+      - name: Package firmware and build manifest
+        run: |
+          test -d bin/targets/airoha/an7581
+          mkdir -p release
+          tar --zstd -cf release/nokia-xg-040g-md-epon1g-experimental.tar.zst \
+            -C bin/targets/airoha/an7581 .
+          {
+            echo "repository=laodadelaoda/ponwrt"
+            echo "source_commit=${GITHUB_SHA}"
+            echo "target=nokia_xg-040g-md-ubi"
+            echo "pon_drivers_commit=47ad31349807099cf84c8ca9fb1a3f10120ef9ee"
+            echo "pon_userspace_commit=$(git -C feeds/pon_userspace rev-parse HEAD)"
+            echo "mode=epon-1g"
+            echo "validation=compile-only; EPON 1G hardware/OLT interoperability is not established"
+          } > release/BUILD-MANIFEST.txt
+          cd release
+          sha256sum *.tar.zst BUILD-MANIFEST.txt > SHA256SUMS
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nokia-xg-040g-md-epon1g-experimental-${{ github.sha }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 14
