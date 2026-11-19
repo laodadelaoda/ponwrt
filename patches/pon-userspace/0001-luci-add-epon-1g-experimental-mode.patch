@@ -1,5 +1,4 @@
 diff --git a/luci-app-pon/htdocs/luci-static/resources/view/pon/config.js b/luci-app-pon/htdocs/luci-static/resources/view/pon/config.js
-index b5ab038..0000000 100644
 --- a/luci-app-pon/htdocs/luci-static/resources/view/pon/config.js
 +++ b/luci-app-pon/htdocs/luci-static/resources/view/pon/config.js
 @@ -128,6 +128,7 @@ return view.extend({
