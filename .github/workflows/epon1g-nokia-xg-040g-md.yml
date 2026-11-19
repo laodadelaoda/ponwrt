@@ -3,7 +3,7 @@ name: Build Nokia XG-040G-MD EPON 1G (experimental)
 on:
   push:
     branches:
-      - epon1g-nokia-xg-040g-md
+      - master
     paths:
       - '.github/workflows/epon1g-nokia-xg-040g-md.yml'
       - 'feeds.conf.default'
@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: epon1g-nokia-xg-040g-md
+  group: ponwrt-epon1g-master
   cancel-in-progress: true
 
 jobs:
@@ -73,11 +73,11 @@ jobs:
           restore-keys: |
             ponwrt-epon1g-dl-
 
-      - name: Fetch pinned feeds
+      - name: Fetch audited feeds
         run: |
           ./scripts/feeds update -a
           test "$(git -C feeds/pon_drivers rev-parse HEAD)" = "47ad31349807099cf84c8ca9fb1a3f10120ef9ee"
-          test "$(git -C feeds/pon_userspace rev-parse HEAD)" = "a903fcc80f4b89f9b9e59a02d3ba1fc5550819a5"
+          test "$(git -C feeds/pon_userspace rev-parse HEAD)" = "$(git -C feeds/pon_userspace rev-parse origin/main)"
           ./scripts/feeds install -a
 
       - name: Audit EPON 1G driver and EN7572 calibration profile
@@ -167,7 +167,7 @@ jobs:
             echo "source_commit=${GITHUB_SHA}"
             echo "target=nokia_xg-040g-md-ubi"
             echo "pon_drivers_commit=47ad31349807099cf84c8ca9fb1a3f10120ef9ee"
-            echo "pon_userspace_commit=a903fcc80f4b89f9b9e59a02d3ba1fc5550819a5"
+            echo "pon_userspace_commit=$(git -C feeds/pon_userspace rev-parse HEAD)"
             echo "mode=epon-1g"
             echo "validation=compile-only; EPON 1G hardware/OLT interoperability is not established"
           } > release/BUILD-MANIFEST.txt
