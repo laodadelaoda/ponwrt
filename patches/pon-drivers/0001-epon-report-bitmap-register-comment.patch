@@ -1,7 +1,7 @@
 diff --git a/airoha-xpon/src/airoha-xpon-epon.c b/airoha-xpon/src/airoha-xpon-epon.c
 --- a/airoha-xpon/src/airoha-xpon-epon.c
 +++ b/airoha-xpon/src/airoha-xpon-epon.c
-@@ -521,6 +521,9 @@
+@@ -521,6 +521,9 @@ static int airoha_xpon_epon_start_mac(struct airoha_xpon *xpon)
  	airoha_pon_phy_update_bits(xpon, AIROHA_XEPON_PHY_CSR_DUMMY_RX,
  	                           AIROHA_XEPON_PHY_CONTINUOUS_TX, 0);
  
