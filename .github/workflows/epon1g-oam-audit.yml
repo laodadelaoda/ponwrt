@@ -3,7 +3,7 @@ name: EPON 1G OAM patch audit
 on:
   push:
     branches:
-      - epon1g-oam-fixes
+      - master
     paths:
       - '.github/workflows/epon1g-oam-audit.yml'
       - 'patches/pon-userspace/0002-oam-ctc-vlan-and-oui-fail-closed.patch'
@@ -24,11 +24,11 @@ jobs:
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Fetch exact pinned userspace source
+      - name: Fetch userspace main branch
         run: |
-          git clone --no-checkout https://github.com/pbs05/openwrt-pon-userspace.git feeds/pon_userspace
-          git -C feeds/pon_userspace checkout --detach a903fcc80f4b89f9b9e59a02d3ba1fc5550819a5
-          test "$(git -C feeds/pon_userspace rev-parse HEAD)" = "a903fcc80f4b89f9b9e59a02d3ba1fc5550819a5"
+          git clone --depth 1 --branch main https://github.com/pbs05/openwrt-pon-userspace.git feeds/pon_userspace
+          test "$(git -C feeds/pon_userspace branch --show-current)" = "main"
+          echo "Auditing userspace main at $(git -C feeds/pon_userspace rev-parse HEAD)"
 
       - name: Check and apply OAM patch
         run: |
