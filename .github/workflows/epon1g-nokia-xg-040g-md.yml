@@ -75,7 +75,7 @@ jobs:
           assert "AIROHA_XPON_MODE_EPON_1G" in mode
           assert "AIROHA_PCS_PON_MODE_EPON_1G" in mode
           start = frontend.index("static int en7572_bob_base")
-          end = frontend.index("\\n}", start)
+          end = frontend.index("\n}", start)
           body = frontend[start:end]
           assert "case AIROHA_PON_FRONTEND_MODE_EPON_1G:" in body
           assert "return EN7572_BOB_A2_BASE;" in body
