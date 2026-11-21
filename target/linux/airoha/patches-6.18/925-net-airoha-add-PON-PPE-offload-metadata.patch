@@ -294,7 +294,6 @@ Signed-off-by: pbs05 <27010143+pbs05@users.noreply.github.com>
 +	while ((e = rhashtable_walk_next(&iter))) {
 +		if (IS_ERR(e))
 +			continue;
-+		/* -EAGAIN rewinds the walk after a concurrent table resize. */
 +		if (e->egress_dev == dev && list_empty(&e->gc_node))
 +			list_add_tail(&e->gc_node, &remove_list);
 +	}
