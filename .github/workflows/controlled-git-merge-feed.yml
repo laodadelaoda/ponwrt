@@ -182,11 +182,6 @@ jobs:
             ./scripts/feeds update "$feed" > "$GITHUB_WORKSPACE/feed-update-$feed.log" 2>&1
             feed_rc=$?
             set -e
-            {
-              echo "===== scripts/feeds update $feed (exit=$feed_rc) ====="
-              cat "$GITHUB_WORKSPACE/feed-update-$feed.log"
-              echo
-            } >> "$GITHUB_WORKSPACE/feed-update.log"
             if [ "$feed_rc" -ne 0 ]; then
               echo "$feed=UPDATE_FAILED:$feed_rc" >> "$GITHUB_WORKSPACE/feed-base-dependencies.txt"
               exit 1
@@ -201,17 +196,28 @@ jobs:
               echo "HEAD=$(git -C "feeds/$feed" rev-parse HEAD)"
             } >> "$GITHUB_WORKSPACE/feed-base-dependencies.txt"
           done
-          test -f feeds/packages/lang/rust/rust-package.mk
-          test -f feeds/luci/luci.mk
-          {
-            echo "rust_package_mk=present"
-            echo "luci_mk=present"
-          } >> "$GITHUB_WORKSPACE/feed-base-dependencies.txt"
+          if [ -f feeds/packages/lang/rust/rust-package.mk ]; then
+            echo "rust_package_mk=present" >> "$GITHUB_WORKSPACE/feed-base-dependencies.txt"
+          else
+            echo "rust_package_mk=MISSING:feeds/packages/lang/rust/rust-package.mk" >> "$GITHUB_WORKSPACE/feed-base-dependencies.txt"
+            exit 1
+          fi
+          if [ -f feeds/luci/luci.mk ]; then
+            echo "luci_mk=present" >> "$GITHUB_WORKSPACE/feed-base-dependencies.txt"
+          else
+            echo "luci_mk=MISSING:feeds/luci/luci.mk" >> "$GITHUB_WORKSPACE/feed-base-dependencies.txt"
+            exit 1
+          fi
 
-          # Preserve complete updater/scanner output and its real exit status.
+          # Preserve complete updater output from prerequisite and PON feeds.
           : > "$GITHUB_WORKSPACE/feed-update.log"
-          cat "$GITHUB_WORKSPACE/feed-update-packages.log" >> "$GITHUB_WORKSPACE/feed-update.log"
-          cat "$GITHUB_WORKSPACE/feed-update-luci.log" >> "$GITHUB_WORKSPACE/feed-update.log"
+          for feed in packages luci pon_drivers pon_userspace; do
+            {
+              echo "===== scripts/feeds update $feed ====="
+              cat "$GITHUB_WORKSPACE/feed-update-$feed.log"
+              echo
+            } >> "$GITHUB_WORKSPACE/feed-update.log"
+          done
           update_rc=0
           for feed in pon_drivers pon_userspace; do
             set +e
