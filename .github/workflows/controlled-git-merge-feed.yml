@@ -175,10 +175,20 @@ jobs:
           cp feeds.conf.default "$GITHUB_WORKSPACE/feeds.conf.default.pinned"
 
           # Preserve complete updater/scanner output and its real exit status.
-          set +e
-          ./scripts/feeds update pon_drivers pon_userspace > "$GITHUB_WORKSPACE/feed-update.log" 2>&1
-          update_rc=$?
-          set -e
+          : > "$GITHUB_WORKSPACE/feed-update.log"
+          update_rc=0
+          for feed in pon_drivers pon_userspace; do
+            set +e
+            ./scripts/feeds update "$feed" > "$GITHUB_WORKSPACE/feed-update-$feed.log" 2>&1
+            feed_rc=$?
+            set -e
+            {
+              echo "===== scripts/feeds update $feed (exit=$feed_rc) ====="
+              cat "$GITHUB_WORKSPACE/feed-update-$feed.log"
+              echo
+            } >> "$GITHUB_WORKSPACE/feed-update.log"
+            [ "$feed_rc" -eq 0 ] || update_rc=1
+          done
           printf 'scripts_feeds_update_exit=%s\n' "$update_rc" > "$GITHUB_WORKSPACE/feed-git-status.txt"
           test "$update_rc" -eq 0
 
@@ -247,16 +257,16 @@ jobs:
 
               if [ "$feed" = pon_userspace ]; then
                 for package_name in airoha-pon-daemons airoha-ponctl luci-app-iptv luci-app-pon; do
-                  if grep -Eq "^\${package_name}[[:space:]]" "$listing"; then
-                    echo "required_package_\${package_name}=present"
+                  if grep -Eq "^${package_name}[[:space:]]" "$listing"; then
+                    echo "required_package_${package_name}=present"
                   else
-                    echo "required_package_\${package_name}=MISSING"
+                    echo "required_package_${package_name}=MISSING"
                     overall=1
                   fi
                 done
               fi
 
-              if grep -Eq 'ERROR: please fix|Makefile.*(error|Error)|parse.*(failed|error)' "$GITHUB_WORKSPACE/feed-update.log"; then
+              if grep -Eq 'ERROR: please fix|Makefile.*(error|Error)|parse.*(failed|error)' "$GITHUB_WORKSPACE/feed-update-$feed.log"; then
                 echo "scanner_diagnostics=ERROR_FOUND_IN_UPDATE_LOG"
                 overall=1
               else
@@ -279,14 +289,14 @@ jobs:
           if [ -d "$WORKTREE" ]; then
             find "$WORKTREE" -type f -name dump.txt -print0 |
               while IFS= read -r -d '' file; do
-                relative="\${file#"$WORKTREE"/}"
+                relative="${file#"$WORKTREE"/}"
                 destination="$GITHUB_WORKSPACE/feed-diagnostics/$relative"
                 mkdir -p "$(dirname "$destination")"
                 cp "$file" "$destination"
               done
             find "$WORKTREE/feeds" -type f \( -name '*.log' -o -name '*.stderr' \) -print0 2>/dev/null |
               while IFS= read -r -d '' file; do
-                relative="\${file#"$WORKTREE"/}"
+                relative="${file#"$WORKTREE"/}"
                 destination="$GITHUB_WORKSPACE/feed-diagnostics/$relative"
                 mkdir -p "$(dirname "$destination")"
                 cp "$file" "$destination"
@@ -340,6 +350,8 @@ jobs:
             feeds.conf.default.before
             feeds.conf.default.pinned
             feed-update.log
+            feed-update-pon_drivers.log
+            feed-update-pon_userspace.log
             feed-remotes-heads.txt
             feed-git-status.txt
             feed-git-result.txt
