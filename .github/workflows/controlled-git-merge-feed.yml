@@ -4,17 +4,17 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ponwrt-controlled-git-merge-feed
   cancel-in-progress: false
 
 env:
-  TARGET_SHA: c8725e8da807571b70440d589892a6f87736c47e
+  TARGET_SHA: 6cd1db240ce5027c8f680def70264d2c9f00c47c
   UPSTREAM_SHA: 6003f6b8c3278a27712f4fdaaa8d1e5faa2b1f54
   EXPECTED_MERGE_BASE: 4765b657625ec5bbda74b44400465fe043802b30
-  DRIVERS_SHA: 47ad31349807099cf84c8ca9fb1a3f10120ef9ee
+  DRIVERS_SHA: e4a43262a7dbf9abe269e5661e81dc302a37d822
   USERSPACE_SHA: a903fcc80f4b89f9b9e59a02d3ba1fc5550819a5
 
 jobs:
@@ -27,7 +27,7 @@ jobs:
         with:
           ref: ${{ env.TARGET_SHA }}
           fetch-depth: 0
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Create isolated Git operation workspace
         shell: bash
@@ -328,6 +328,34 @@ jobs:
           cat "$GITHUB_WORKSPACE/feed-metadata/"pon_*.txt
           exit "$overall"
 
+      - name: Write back verified merge with branch-head lease
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORKTREE"
+          TARGET_BRANCH="epon1g-nokia-xg-040g-md"
+          MERGE_SHA="$(git rev-parse HEAD)"
+          read -r commit_sha parent_one parent_two _ < <(git rev-list --parents -n 1 "$MERGE_SHA")
+          test "$commit_sha" = "$MERGE_SHA"
+          test "$parent_one" = "$TARGET_SHA"
+          test "$parent_two" = "$UPSTREAM_SHA"
+          remote_sha="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | awk 'NR==1 {print $1}')"
+          if [ "$remote_sha" != "$TARGET_SHA" ]; then
+            echo "Refusing write: target branch moved (expected $TARGET_SHA, found ${remote_sha:-MISSING})"
+            exit 1
+          fi
+          git push origin "$MERGE_SHA:refs/heads/$TARGET_BRANCH"
+          pushed_sha="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | awk 'NR==1 {print $1}')"
+          test "$pushed_sha" = "$MERGE_SHA"
+          {
+            echo "writeback=SUCCESS"
+            echo "branch=$TARGET_BRANCH"
+            echo "previous_head=$TARGET_SHA"
+            echo "upstream_parent=$UPSTREAM_SHA"
+            echo "merge_commit=$MERGE_SHA"
+            echo "verified_remote_head=$pushed_sha"
+          } | tee "$GITHUB_WORKSPACE/writeback-result.txt"
+
       - name: Collect Feed scanner diagnostics and dump files
         if: always()
         shell: bash
@@ -378,6 +406,7 @@ jobs:
             echo "- Expected merge base: $EXPECTED_MERGE_BASE"
             echo "- Drivers Feed SHA: $DRIVERS_SHA"
             echo "- Userspace Feed SHA: $USERSPACE_SHA"
+            if [ -f "$GITHUB_WORKSPACE/writeback-result.txt" ]; then echo; echo '## writeback-result.txt'; cat "$GITHUB_WORKSPACE/writeback-result.txt"; fi
             echo
             for f in merge-result-sha.txt path-counts.txt airoha-compatibility.txt path-integrity-result.txt feed-remotes-heads.txt feed-git-result.txt feed-git-status.txt feed-metadata-result.txt feed-dump-collection-status.txt feed-base-dependencies.txt; do
               if [ -f "$GITHUB_WORKSPACE/$f" ]; then
@@ -399,6 +428,7 @@ jobs:
           name: ponwrt-controlled-git-feed-acceptance
           path: |
             fixed-revisions.txt
+            writeback-result.txt
             merge-process.txt
             merge-result.txt
             merge-result-sha.txt
