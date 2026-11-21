@@ -333,6 +333,14 @@
 				};
 			};
 		};
+
+		/* The EN7581 CPU ADC has no monitor IRQ; poll it independently. */
+		cpu_thermal_cpu: cpu-thermal-cpu {
+			polling-delay-passive = <0>;
+			polling-delay = <1000>;
+
+			thermal-sensors = <&thermal 1>;
+		};
 	};
 
 	clk25m: oscillator {
@@ -652,7 +660,7 @@
 			interrupts = <GIC_SPI 23 IRQ_TYPE_LEVEL_HIGH>;
 			airoha,chip-scu = <&chip_scu>;
 
-			#thermal-sensor-cells = <0>;
+			#thermal-sensor-cells = <1>;
 		};
 
 		system-controller@1fbf0200 {
