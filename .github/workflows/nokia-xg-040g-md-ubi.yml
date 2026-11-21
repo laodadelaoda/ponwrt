@@ -76,7 +76,7 @@ jobs:
             printf '%s SHA: %s\n%s URL: %s\n' "$name" "$actual_sha" "$name" "$actual_url" | tee -a source-revisions.txt
           }
 
-          check_feed pon_drivers https://github.com/pbs05/openwrt-pon-drivers.git 47ad31349807099cf84c8ca9fb1a3f10120ef9ee
+          check_feed pon_drivers https://github.com/laodadelaoda/openwrt-pon-drivers.git e4a43262a7dbf9abe269e5661e81dc302a37d822
           check_feed pon_userspace https://github.com/pbs05/openwrt-pon-userspace.git a903fcc80f4b89f9b9e59a02d3ba1fc5550819a5
 
           ./scripts/feeds install -a
