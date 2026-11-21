@@ -1,8 +1,9 @@
 From: pbs05 <27010143+pbs05@users.noreply.github.com>
 Subject: [PATCH] net: airoha: use the shared port lock for MIB stats
 
-The AN7581 phylink patch uses the port lock for MIB reads and GDM4
-fragment register updates. Keep the lossless MIB reader on that lock.
+The AN7581 phylink patch uses the shared spinlock for MIB reads and a
+separate link mutex for GDM4 fragment register updates. Keep the MIB
+reader on the shared spinlock.
 
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c

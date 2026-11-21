@@ -229,7 +229,7 @@ Signed-off-by: Vitaliy Sochnev <sochnev.v.74@gmail.com>
  
  	for (i = 0; i < AIROHA_THERMAL_FIELD_MAX; i++) {
  		struct regmap_field *field;
-@@ -598,17 +716,29 @@ static int en7581_thermal_probe(struct p
+@@ -598,17 +716,32 @@ static int en7581_thermal_probe(struct p
  
  		field = devm_regmap_field_alloc(dev, priv->chip_scu,
  						en7581_chip_scu_fields[i]);
@@ -257,11 +257,14 @@ Signed-off-by: Vitaliy Sochnev <sochnev.v.74@gmail.com>
 +			dev_warn(dev, "CPU thermal ADC unavailable: %d\n", ret);
 +			priv->cpu_adc_failed = true;
 +		}
++	} else {
++		/* A zero-cell DT exposes only sensor 0; do not register sensor 1. */
++		priv->cpu_adc_failed = true;
 +	}
  
  	return 0;
  }
-@@ -765,6 +895,9 @@ static int airoha_thermal_probe(struct p
+@@ -765,6 +898,9 @@ static int airoha_thermal_probe(struct p
  		struct airoha_thermal_zone *zone;
  		struct thermal_zone_device *tz;
  
@@ -271,7 +274,7 @@ Signed-off-by: Vitaliy Sochnev <sochnev.v.74@gmail.com>
  		zone = devm_kzalloc(dev, sizeof(*zone), GFP_KERNEL);
  		if (!zone)
  			return -ENOMEM;
-@@ -800,8 +933,15 @@ static const int an7583_zone_sensors[AN7
+@@ -800,8 +936,15 @@ static const int an7583_zone_sensors[AN7
  	AN7583_CPU_TEMP_SENSOR,
  };
  
