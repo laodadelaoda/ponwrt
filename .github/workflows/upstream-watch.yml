@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: "0 4 * * *"
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/upstream-watch.yml"
+      - "upstream-sources.json"
 
 permissions:
   contents: read
@@ -70,7 +74,7 @@ jobs:
             fi
           } > upstream-review.md
 
-          if [[ -s upstream-changes.tsv ]]; then
+          if [[ -s upstream-changes.tsv && "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
             existing="$(gh issue list --state open --json number,title --jq '.[] | select(.title == "Upstream compatibility review required") | .number' | head -n1 || true)"
             if [[ -z "$existing" ]]; then
               gh issue create \
