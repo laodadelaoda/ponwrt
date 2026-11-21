@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "baseline_semantics": "initial-observed-reference; monitoring only; not compatibility certification; not a build lock",
+  "sources": [
+    {
+      "name": "PonWrt main source",
+      "repository": "pbs05/ponwrt",
+      "ref": "master",
+      "role": "Airoha platform and PON integration",
+      "baseline_sha": "f6977f2947eb355b106470354feae3d14868fbdd"
+    },
+    {
+      "name": "ImmortalWrt main source",
+      "repository": "immortalwrt/immortalwrt",
+      "ref": "master",
+      "role": "base distribution and kernel",
+      "baseline_sha": "6003f6b8c3278a27712f4fdaaa8d1e5faa2b1f54"
+    },
+    {
+      "name": "ImmortalWrt packages feed",
+      "repository": "immortalwrt/packages",
+      "ref": "master",
+      "role": "general packages",
+      "baseline_sha": "decf94639ffd6ddd26591c190b547c6b7eea150b"
+    },
+    {
+      "name": "ImmortalWrt LuCI feed",
+      "repository": "immortalwrt/luci",
+      "ref": "master",
+      "role": "LuCI applications and modules",
+      "baseline_sha": "8724b54de3a760294aedeb10a29ffba7e44cca2f"
+    },
+    {
+      "name": "OpenWrt routing feed",
+      "repository": "openwrt/routing",
+      "ref": "master",
+      "role": "routing packages",
+      "baseline_sha": "ea8633da9c461a9bdc62a0323439d31180762e03"
+    },
+    {
+      "name": "OpenWrt telephony feed",
+      "repository": "openwrt/telephony",
+      "ref": "master",
+      "role": "telephony packages",
+      "baseline_sha": "06feffc2c154993f555b43756ef7db6dd7e58225"
+    },
+    {
+      "name": "OpenWrt video feed",
+      "repository": "openwrt/video",
+      "ref": "master",
+      "role": "video packages",
+      "baseline_sha": "6a3b5fd6e963f41caa73ef4f691e156d467e2894"
+    },
+    {
+      "name": "PonWrt PON drivers feed",
+      "repository": "pbs05/openwrt-pon-drivers",
+      "ref": "main",
+      "role": "Airoha/PON kernel drivers",
+      "baseline_sha": "47ad31349807099cf84c8ca9fb1a3f10120ef9ee"
+    },
+    {
+      "name": "PonWrt PON userspace feed",
+      "repository": "pbs05/openwrt-pon-userspace",
+      "ref": "main",
+      "role": "PON userspace services and tools",
+      "baseline_sha": "a903fcc80f4b89f9b9e59a02d3ba1fc5550819a5"
+    }
+  ]
+}
