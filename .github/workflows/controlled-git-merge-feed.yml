@@ -266,8 +266,11 @@ jobs:
                 done
               fi
 
-              if grep -Eq 'ERROR: please fix|Makefile.*(error|Error)|parse.*(failed|error)' "$GITHUB_WORKSPACE/feed-update-$feed.log"; then
-                echo "scanner_diagnostics=ERROR_FOUND_IN_UPDATE_LOG"
+              if [ ! -f "$GITHUB_WORKSPACE/feed-update-$feed.log" ]; then
+                echo "feed_update_log=MISSING"
+                overall=1
+              elif grep -Eq 'ERROR: please fix|Makefile.*(error|Error)|parse.*(failed|error)' "$GITHUB_WORKSPACE/feed-update-$feed.log"; then
+                echo "scanner_diagnostics=ERROR_FOUND_IN_THIS_FEED_UPDATE_LOG"
                 overall=1
               else
                 echo "scanner_diagnostics=no_known_metadata_error_pattern"
@@ -302,6 +305,17 @@ jobs:
                 cp "$file" "$destination"
               done
           fi
+          : > "$GITHUB_WORKSPACE/feed-dump-collection-status.txt"
+          for package_name in airoha-pon-daemons airoha-ponctl luci-app-iptv luci-app-pon; do
+            source_file="$(find "$WORKTREE" -type f -path "*/$package_name/dump.txt" -print -quit 2>/dev/null)"
+            if [ -n "$source_file" ]; then
+              mkdir -p "$GITHUB_WORKSPACE/feed-diagnostics/expected/pon_userspace/$package_name"
+              cp "$source_file" "$GITHUB_WORKSPACE/feed-diagnostics/expected/pon_userspace/$package_name/dump.txt"
+              echo "$package_name=PRESENT:$source_file" >> "$GITHUB_WORKSPACE/feed-dump-collection-status.txt"
+            else
+              echo "$package_name=MISSING" >> "$GITHUB_WORKSPACE/feed-dump-collection-status.txt"
+            fi
+          done
           find "$GITHUB_WORKSPACE/feed-diagnostics" -type f -print | sort > "$GITHUB_WORKSPACE/feed-diagnostics-file-list.txt"
 
       - name: Final acceptance and artifact manifest
@@ -318,7 +332,7 @@ jobs:
             echo "- Drivers Feed SHA: $DRIVERS_SHA"
             echo "- Userspace Feed SHA: $USERSPACE_SHA"
             echo
-            for f in merge-result-sha.txt path-counts.txt airoha-compatibility.txt path-integrity-result.txt feed-remotes-heads.txt feed-git-result.txt feed-git-status.txt feed-metadata-result.txt; do
+            for f in merge-result-sha.txt path-counts.txt airoha-compatibility.txt path-integrity-result.txt feed-remotes-heads.txt feed-git-result.txt feed-git-status.txt feed-metadata-result.txt feed-dump-collection-status.txt; do
               if [ -f "$GITHUB_WORKSPACE/$f" ]; then
                 echo "## $f"
                 cat "$GITHUB_WORKSPACE/$f"
