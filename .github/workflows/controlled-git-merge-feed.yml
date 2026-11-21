@@ -1,0 +1,241 @@
+name: PonWrt Controlled Git Merge and Feed Environment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ponwrt-controlled-git-merge-feed
+  cancel-in-progress: false
+
+env:
+  TARGET_SHA: c8725e8da807571b70440d589892a6f87736c47e
+  UPSTREAM_SHA: 6003f6b8c3278a27712f4fdaaa8d1e5faa2b1f54
+  EXPECTED_MERGE_BASE: 4765b657625ec5bbda74b44400465fe043802b30
+  DRIVERS_SHA: 47ad31349807099cf84c8ca9fb1a3f10120ef9ee
+  USERSPACE_SHA: a903fcc80f4b89f9b9e59a02d3ba1fc5550819a5
+
+jobs:
+  controlled-git:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout fixed PonWrt input
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Create isolated Git operation workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add immortalwrt https://github.com/immortalwrt/immortalwrt.git
+          git fetch --no-tags immortalwrt "$UPSTREAM_SHA"
+          git cat-file -e "$TARGET_SHA^{commit}"
+          git cat-file -e "$UPSTREAM_SHA^{commit}"
+          test "$(git merge-base "$TARGET_SHA" "$UPSTREAM_SHA")" = "$EXPECTED_MERGE_BASE"
+          WORKTREE="$RUNNER_TEMP/ponwrt-controlled-merge"
+          echo "WORKTREE=$WORKTREE" >> "$GITHUB_ENV"
+          git worktree add --detach "$WORKTREE" "$TARGET_SHA"
+          git -C "$WORKTREE" config user.name "PonWrt Controlled Git Environment"
+          git -C "$WORKTREE" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          {
+            echo "TARGET_SHA=$TARGET_SHA"
+            echo "UPSTREAM_SHA=$UPSTREAM_SHA"
+            echo "MERGE_BASE=$EXPECTED_MERGE_BASE"
+            echo "DRIVERS_SHA=$DRIVERS_SHA"
+            echo "USERSPACE_SHA=$USERSPACE_SHA"
+          } | tee "$GITHUB_WORKSPACE/fixed-revisions.txt"
+
+      - name: Record path ownership and enforce 111 unique paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORKTREE"
+          git diff --name-only "$EXPECTED_MERGE_BASE" "$TARGET_SHA" | sort -u > ponwrt-paths.txt
+          git diff --name-only "$EXPECTED_MERGE_BASE" "$UPSTREAM_SHA" | sort -u > immortalwrt-paths.txt
+          comm -12 ponwrt-paths.txt immortalwrt-paths.txt > overlapping-paths.txt
+          comm -23 ponwrt-paths.txt immortalwrt-paths.txt > ponwrt-only-paths.txt
+          comm -23 immortalwrt-paths.txt ponwrt-paths.txt > immortalwrt-only-paths.txt
+          test "$(wc -l < ponwrt-only-paths.txt)" -eq 111
+          printf 'PonWrt-only paths: %s\n' "$(wc -l < ponwrt-only-paths.txt)" | tee "$GITHUB_WORKSPACE/path-counts.txt"
+
+      - name: Perform real merge and resolve only approved conflicts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORKTREE"
+          set +e
+          git merge --no-commit --no-ff "$UPSTREAM_SHA"
+          rc=$?
+          set -e
+          printf 'merge_initial_exit=%s\n' "$rc" > "$GITHUB_WORKSPACE/merge-process.txt"
+          unresolved="$(git diff --name-only --diff-filter=U | sort)"
+          printf '%s\n' "$unresolved" > "$GITHUB_WORKSPACE/unresolved-before-resolution.txt"
+          cat > "$RUNNER_TEMP/expected-conflicts.txt" <<'EOF'
+          target/linux/airoha/an7581/config-6.18
+          target/linux/airoha/an7583/config-6.18
+          target/linux/airoha/dts/an7581.dtsi
+          EOF
+          diff -u <(sort "$RUNNER_TEMP/expected-conflicts.txt") "$GITHUB_WORKSPACE/unresolved-before-resolution.txt"
+          git checkout --theirs -- target/linux/airoha/an7581/config-6.18
+          git checkout --ours -- target/linux/airoha/an7583/config-6.18 target/linux/airoha/dts/an7581.dtsi
+          git add target/linux/airoha/an7581/config-6.18 target/linux/airoha/an7583/config-6.18 target/linux/airoha/dts/an7581.dtsi
+          test -z "$(git diff --name-only --diff-filter=U)"
+          test -z "$(git ls-files -u)"
+          git commit -m "merge: controlled ImmortalWrt update for PonWrt validation"
+          git rev-parse HEAD | tee "$GITHUB_WORKSPACE/merge-result-sha.txt"
+          git show --no-patch --format=fuller HEAD > "$GITHUB_WORKSPACE/merge-result.txt"
+
+      - name: Validate Airoha platform and patch pairing
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORKTREE"
+          A1=target/linux/airoha/an7581/config-6.18
+          A3=target/linux/airoha/an7583/config-6.18
+          D3=target/linux/airoha/dts/an7583.dtsi
+          P=target/linux/airoha/patches-6.18
+          grep -qx 'CONFIG_NVMEM_AIROHA_SMC_EFUSES=y' "$A1"
+          ! grep -qx 'CONFIG_NVMEM_AIROHA_EFUSE=y' "$A1"
+          grep -qx 'CONFIG_NVMEM_AIROHA_EFUSE=y' "$A3"
+          ! grep -qx 'CONFIG_NVMEM_AIROHA_SMC_EFUSES=y' "$A3"
+          test -f "$P/403-nvmem-airoha-add-an7583-efuse.patch"
+          grep -q 'compatible = "airoha,an7583-efuse"' "$P/403-nvmem-airoha-add-an7583-efuse.patch"
+          grep -q 'compatible = "airoha,an7583-efuse"' "$D3"
+          test -f "$P/230-v7.3-nvmem-airoha-Add-support-for-SMC-eFUSE.patch"
+          test -f "$P/231-nvmem-airoha-smc-efuses-Fix-the-SMC-function-ID-for-eFuse-read.patch"
+          grep -q '0x82000005' "$P/231-nvmem-airoha-smc-efuses-Fix-the-SMC-function-ID-for-eFuse-read.patch"
+          grep -q 'cpu_thermal_cpu: cpu-thermal-cpu' target/linux/airoha/dts/an7581.dtsi
+          grep -q 'polling-delay = <1000>;' target/linux/airoha/dts/an7581.dtsi
+          grep -q 'thermal-sensors = <&thermal 1>;' target/linux/airoha/dts/an7581.dtsi
+          test -f "$P/402-08-v7.4-thermal-drivers-airoha-Request-the-EN7581-IRQ-after-zone-registration.patch"
+          test -f "$P/402-09-thermal-drivers-airoha-read-the-EN7581-CPU-sensor.patch"
+          echo "PASS: AN7581/AN7583 eFuse, DTS, thermal and patch pairing" | tee "$GITHUB_WORKSPACE/airoha-compatibility.txt"
+
+      - name: Verify all PonWrt-only paths and calculate SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORKTREE"
+          : > "$GITHUB_WORKSPACE/ponwrt-only-path-audit.tsv"
+          : > "$GITHUB_WORKSPACE/file-sha256.txt"
+          while IFS= read -r path; do
+            test -n "$path" || continue
+            if git cat-file -e "$TARGET_SHA:$path" 2>/dev/null; then
+              test -f "$path"
+              before="$(git rev-parse "$TARGET_SHA:$path")"
+              after="$(git rev-parse "HEAD:$path")"
+              test "$before" = "$after"
+              printf 'IDENTICAL\t%s\t%s\n' "$path" "$before" >> "$GITHUB_WORKSPACE/ponwrt-only-path-audit.tsv"
+              sha256sum "$path" >> "$GITHUB_WORKSPACE/file-sha256.txt"
+            else
+              ! git cat-file -e "HEAD:$path" 2>/dev/null
+              printf 'DELETED_PRESERVED\t%s\n' "$path" >> "$GITHUB_WORKSPACE/ponwrt-only-path-audit.tsv"
+              printf 'DELETED\t%s\n' "$path" >> "$GITHUB_WORKSPACE/file-sha256.txt"
+            fi
+          done < ponwrt-only-paths.txt
+          test "$(wc -l < "$GITHUB_WORKSPACE/ponwrt-only-path-audit.tsv")" -eq 111
+          echo "PASS: all 111 PonWrt-only paths preserved byte-for-byte or retained as upstream deletions" | tee "$GITHUB_WORKSPACE/path-integrity-result.txt"
+
+      - name: Pin both PON feeds and execute real feed updates
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORKTREE"
+          test -f feeds.conf.default
+          cp feeds.conf.default "$GITHUB_WORKSPACE/feeds.conf.default.before"
+          python3 - "$DRIVERS_SHA" "$USERSPACE_SHA" <<'PY'
+          from pathlib import Path
+          import sys
+          drivers, userspace = sys.argv[1:]
+          p = Path("feeds.conf.default")
+          lines = p.read_text().splitlines()
+          replacements = {
+              "pon_drivers": f"src-git pon_drivers https://github.com/pbs05/openwrt-pon-drivers.git^{drivers}",
+              "pon_userspace": f"src-git pon_userspace https://github.com/pbs05/openwrt-pon-userspace.git^{userspace}",
+          }
+          found = set()
+          out = []
+          for line in lines:
+              key = line.split()[1] if line.startswith("src-git ") and len(line.split()) > 1 else None
+              if key in replacements:
+                  out.append(replacements[key])
+                  found.add(key)
+              else:
+                  out.append(line)
+          if found != set(replacements):
+              raise SystemExit(f"Expected both PON feeds in feeds.conf.default; found={sorted(found)}")
+          p.write_text("\n".join(out) + "\n")
+          PY
+          cp feeds.conf.default "$GITHUB_WORKSPACE/feeds.conf.default.pinned"
+          ./scripts/feeds update pon_drivers pon_userspace 2>&1 | tee "$GITHUB_WORKSPACE/feed-update.log"
+          for feed in pon_drivers pon_userspace; do
+            test -d "feeds/$feed/.git"
+            {
+              echo "[$feed]"
+              git -C "feeds/$feed" remote -v
+              echo "HEAD=$(git -C "feeds/$feed" rev-parse HEAD)"
+              echo "EXPECTED=$( [ "$feed" = pon_drivers ] && echo "$DRIVERS_SHA" || echo "$USERSPACE_SHA" )"
+            } >> "$GITHUB_WORKSPACE/feed-remotes-heads.txt"
+          done
+          test "$(git -C feeds/pon_drivers rev-parse HEAD)" = "$DRIVERS_SHA"
+          test "$(git -C feeds/pon_userspace rev-parse HEAD)" = "$USERSPACE_SHA"
+          sha256sum feeds.conf.default >> "$GITHUB_WORKSPACE/file-sha256.txt"
+          echo "PASS: both pinned PON feeds updated and HEADs match fixed SHAs" | tee "$GITHUB_WORKSPACE/feed-update-result.txt"
+
+      - name: Final acceptance and artifact manifest
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "# PonWrt controlled Git merge and Feed acceptance"
+            echo
+            echo "- Target SHA: $TARGET_SHA"
+            echo "- ImmortalWrt SHA: $UPSTREAM_SHA"
+            echo "- Expected merge base: $EXPECTED_MERGE_BASE"
+            echo "- Drivers Feed SHA: $DRIVERS_SHA"
+            echo "- Userspace Feed SHA: $USERSPACE_SHA"
+            echo
+            for f in merge-result-sha.txt path-counts.txt airoha-compatibility.txt path-integrity-result.txt feed-remotes-heads.txt feed-update-result.txt; do
+              if [ -f "$GITHUB_WORKSPACE/$f" ]; then
+                echo "## $f"
+                cat "$GITHUB_WORKSPACE/$f"
+                echo
+              else
+                echo "## $f"
+                echo "NOT PRODUCED"
+                echo
+              fi
+            done
+          } > "$GITHUB_WORKSPACE/acceptance-report.md"
+
+      - name: Upload Git operation acceptance artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ponwrt-controlled-git-feed-acceptance
+          path: |
+            fixed-revisions.txt
+            merge-process.txt
+            merge-result.txt
+            merge-result-sha.txt
+            unresolved-before-resolution.txt
+            path-counts.txt
+            ponwrt-only-path-audit.tsv
+            file-sha256.txt
+            airoha-compatibility.txt
+            path-integrity-result.txt
+            feeds.conf.default.before
+            feeds.conf.default.pinned
+            feed-update.log
+            feed-remotes-heads.txt
+            feed-update-result.txt
+            acceptance-report.md
+          if-no-files-found: warn
+          retention-days: 30
