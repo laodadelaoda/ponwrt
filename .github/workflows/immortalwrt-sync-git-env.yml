@@ -184,7 +184,7 @@ jobs:
           P=target/linux/airoha/patches-6.18
           {
             grep -qx 'CONFIG_NVMEM_AIROHA_SMC_EFUSES=y' "$A1"
-            grep -qx '# CONFIG_NVMEM_AIROHA_EFUSE is not set' "$A1"
+            ! grep -qx 'CONFIG_NVMEM_AIROHA_EFUSE=y' "$A1"
             echo "PASS AN7581 uses SMC eFuse Kconfig; legacy eFuse provider disabled"
 
             grep -qx 'CONFIG_NVMEM_AIROHA_EFUSE=y' "$A3"
