@@ -1,0 +1,95 @@
+name: Upstream compatibility watch
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-compatibility-watch
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    name: Inspect both upstreams and all feeds
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout reviewed baseline
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Compare upstream references with reviewed baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s upstream-sources.json
+          jq -e '.schema_version == 1 and (.sources | length > 0)' upstream-sources.json >/dev/null
+
+          printf '[]\n' > upstream-current.json
+          : > upstream-changes.tsv
+          while IFS=$'\t' read -r name repository ref role baseline; do
+            current="$(gh api "repos/${repository}/commits/${ref}" --jq '.sha')"
+            if [[ ! "$current" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "Invalid commit SHA for ${repository}@${ref}: ${current}" >&2
+              exit 1
+            fi
+            jq --arg name "$name" --arg repository "$repository" --arg ref "$ref" \
+               --arg role "$role" --arg sha "$current" \
+               '. + [{name:$name, repository:$repository, ref:$ref, role:$role, current_sha:$sha}]' \
+               upstream-current.json > upstream-current.tmp
+            mv upstream-current.tmp upstream-current.json
+            if [[ "$current" != "$baseline" ]]; then
+              printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$repository" "$ref" "$baseline" "$current" >> upstream-changes.tsv
+            fi
+          done < <(jq -r '.sources[] | [.name,.repository,.ref,.role,.baseline_sha] | @tsv' upstream-sources.json)
+
+          {
+            echo "# Upstream compatibility review"
+            echo
+            echo "The following upstream references differ from the last reviewed baseline."
+            echo "This is a source-change notification only; no source was merged and no firmware was built."
+            echo
+            if [[ -s upstream-changes.tsv ]]; then
+              echo "| Source | Repository/ref | Reviewed baseline | Current upstream |"
+              echo "|---|---|---|---|"
+              while IFS=$'\t' read -r name repository ref baseline current; do
+                echo "| ${name} | ${repository}@${ref} | `${baseline}` | `${current}` |"
+              done < upstream-changes.tsv
+              echo
+              echo "Review the base distribution/kernel, PonWrt platform changes and each feed independently. Update upstream-sources.json only after review and acceptance."
+            else
+              echo "No upstream movement detected."
+            fi
+          } > upstream-review.md
+
+          if [[ -s upstream-changes.tsv ]]; then
+            existing="$(gh issue list --state open --json number,title --jq '.[] | select(.title == "Upstream compatibility review required") | .number' | head -n1 || true)"
+            if [[ -z "$existing" ]]; then
+              gh issue create \
+                --title "Upstream compatibility review required" \
+                --body-file upstream-review.md
+            else
+              echo "An open upstream review issue already exists: #${existing}"
+              gh issue comment "$existing" --body-file upstream-review.md
+            fi
+          fi
+
+      - name: Preserve upstream inspection report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-compatibility-report
+          path: |
+            upstream-current.json
+            upstream-review.md
+            upstream-changes.tsv
+          if-no-files-found: warn
+          retention-days: 30
