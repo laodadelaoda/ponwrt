@@ -7,6 +7,8 @@ on:
       - epon1g-nokia-xg-040g-md
     paths:
       - .github/workflows/nokia-xg-040g-md-ubi.yml
+      - target/linux/airoha/dts/**
+      - target/linux/airoha/patches-6.18/402-*.patch
   workflow_dispatch:
 
 permissions:
