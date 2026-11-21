@@ -1,0 +1,109 @@
+name: PonWrt ImmortalWrt Sync Git Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Git operation to perform"
+        required: true
+        type: choice
+        options:
+          - inspect
+          - merge
+        default: inspect
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ponwrt-immortalwrt-sync-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  git-sync:
+    if: github.ref == 'refs/heads/epon1g-nokia-xg-040g-md'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout target branch with full history
+        uses: actions/checkout@v4
+        with:
+          ref: epon1g-nokia-xg-040g-md
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure Git and fetch upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add immortalwrt https://github.com/immortalwrt/immortalwrt.git
+          git fetch --no-tags immortalwrt master
+          echo "TARGET_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "UPSTREAM_HEAD=$(git rev-parse immortalwrt/master)" >> "$GITHUB_ENV"
+          echo "MERGE_BASE=$(git merge-base HEAD immortalwrt/master)" >> "$GITHUB_ENV"
+
+      - name: Verify expected history and report overlap
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$MERGE_BASE" = "4765b657625ec5bbda74b44400465fe043802b30"
+          git status --short
+          git rev-list --left-right --count HEAD...immortalwrt/master | tee commit-counts.txt
+          git diff --name-status "$MERGE_BASE"..HEAD > ponwrt-changes.txt
+          git diff --name-status "$MERGE_BASE"..immortalwrt/master > immortalwrt-changes.txt
+          git diff --name-only "$MERGE_BASE"..HEAD > ponwrt-paths.txt
+          git diff --name-only "$MERGE_BASE"..immortalwrt/master > immortalwrt-paths.txt
+          comm -12 <(sort ponwrt-paths.txt) <(sort immortalwrt-paths.txt) > overlapping-paths.txt
+          cat > expected-overlap.txt <<'EOF'
+          include/image.mk
+          package/network/config/firewall4/Makefile
+          target/linux/airoha/an7581/config-6.18
+          target/linux/airoha/an7583/config-6.18
+          target/linux/airoha/dts/an7581.dtsi
+          target/linux/airoha/dts/an7583.dtsi
+          target/linux/airoha/patches-6.18/402-08-v7.4-thermal-drivers-airoha-Request-the-EN7581-IRQ-after-zone-registration.patch
+          target/linux/airoha/patches-6.18/402-09-thermal-drivers-airoha-read-the-EN7581-CPU-sensor.patch
+          EOF
+          diff -u <(sort expected-overlap.txt) overlapping-paths.txt
+
+      - name: Create merge preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-tree "$(git merge-base HEAD immortalwrt/master)" HEAD immortalwrt/master > merge-tree-preview.txt || true
+          git merge --no-commit --no-ff immortalwrt/master || {
+            git status --short > merge-conflicts.txt
+            echo "Merge has conflicts; no commit or push was performed."
+            exit 2
+          }
+          git status --short > merge-preview-status.txt
+          git diff --cached --stat > merge-preview-stat.txt
+          git merge --abort
+
+      - name: Execute merge only when explicitly selected
+        if: inputs.operation == 'merge'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge --no-ff --no-edit immortalwrt/master
+          git push origin HEAD:epon1g-nokia-xg-040g-md
+
+      - name: Upload Git audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ponwrt-immortalwrt-git-sync-report
+          path: |
+            commit-counts.txt
+            ponwrt-changes.txt
+            immortalwrt-changes.txt
+            overlapping-paths.txt
+            expected-overlap.txt
+            merge-tree-preview.txt
+            merge-conflicts.txt
+            merge-preview-status.txt
+            merge-preview-stat.txt
+          if-no-files-found: ignore
+          retention-days: 30
