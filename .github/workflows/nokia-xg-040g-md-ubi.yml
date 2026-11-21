@@ -7,8 +7,8 @@ on:
       - epon1g-nokia-xg-040g-md
     paths:
       - .github/workflows/nokia-xg-040g-md-ubi.yml
-      - target/linux/airoha/dts/**
-      - target/linux/airoha/patches-6.18/402-*.patch
+      - feeds.conf.default
+      - target/linux/airoha/**
   workflow_dispatch:
 
 permissions:
@@ -77,7 +77,7 @@ jobs:
           }
 
           check_feed pon_drivers https://github.com/laodadelaoda/openwrt-pon-drivers.git e4a43262a7dbf9abe269e5661e81dc302a37d822
-          check_feed pon_userspace https://github.com/pbs05/openwrt-pon-userspace.git a903fcc80f4b89f9b9e59a02d3ba1fc5550819a5
+          check_feed pon_userspace https://github.com/laodadelaoda/openwrt-pon-userspace.git a903fcc80f4b89f9b9e59a02d3ba1fc5550819a5
 
           ./scripts/feeds install -a
 
