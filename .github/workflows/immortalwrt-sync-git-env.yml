@@ -4,16 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: "Git operation to perform"
+        description: "Run read-only Git history and merge preflight"
         required: true
         type: choice
         options:
           - inspect
-          - merge
         default: inspect
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ponwrt-immortalwrt-sync-${{ github.ref }}
@@ -81,14 +80,6 @@ jobs:
           git status --short > merge-preview-status.txt
           git diff --cached --stat > merge-preview-stat.txt
           git merge --abort
-
-      - name: Execute merge only when explicitly selected
-        if: inputs.operation == 'merge'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git merge --no-ff --no-edit immortalwrt/master
-          git push origin HEAD:epon1g-nokia-xg-040g-md
 
       - name: Upload Git audit report
         if: always()
