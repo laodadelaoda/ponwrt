@@ -64,7 +64,7 @@ jobs:
           git -C "$WORKTREE" config merge.conflictStyle merge
           git -C "$WORKTREE" cat-file -e "$UPSTREAM_SHA^{commit}"
           git -C "$WORKTREE" merge-base HEAD "$UPSTREAM_SHA" | tee "$WORKTREE/merge-base.txt"
-          test "$(cat merge-base.txt)" = "$EXPECTED_MERGE_BASE"
+          test "$(cat "$WORKTREE/merge-base.txt")" = "$EXPECTED_MERGE_BASE"
 
       - name: Capture path ownership before merge
         shell: bash
@@ -304,11 +304,11 @@ jobs:
               echo
             fi
             if [ -n "${WORKTREE:-}" ] && [ -d "$WORKTREE" ]; then
-              for f in merge-base.txt path-counts.txt expected-conflicts.txt \\
-                unresolved-before-resolution.txt conflict-resolution-report.tsv \\
-                post-resolution-status.txt airoha-efuse-thermal-checks.txt \\
-                shared-path-checks.txt ponwrt-only-path-result.txt \\
-                resolved-merge-name-status.txt resolved-merge-stat.txt \\
+              for f in merge-base.txt path-counts.txt expected-conflicts.txt \
+                unresolved-before-resolution.txt conflict-resolution-report.tsv \
+                post-resolution-status.txt airoha-efuse-thermal-checks.txt \
+                shared-path-checks.txt ponwrt-only-path-result.txt \
+                resolved-merge-name-status.txt resolved-merge-stat.txt \
                 resolved-merge-status.txt final-acceptance.txt; do
                 if [ -f "$WORKTREE/$f" ]; then
                   echo "## $f"
@@ -325,14 +325,14 @@ jobs:
             fi
           } > "$GITHUB_WORKSPACE/controlled-merge-acceptance-report.md"
           if [ -n "${WORKTREE:-}" ] && [ -d "$WORKTREE" ]; then
-            for f in fixed-revisions.txt merge-base.txt ponwrt-paths.txt immortalwrt-paths.txt \\
-              overlapping-paths.txt ponwrt-only-paths.txt immortalwrt-only-paths.txt \\
-              expected-overlap.txt path-counts.txt pre-resolution-status.txt \\
-              unresolved-before-resolution.txt expected-conflicts.txt \\
-              conflict-resolution-report.tsv post-resolution-status.txt \\
-              airoha-efuse-thermal-checks.txt shared-path-checks.txt \\
-              ponwrt-only-path-audit.tsv ponwrt-only-path-result.txt \\
-              resolved-merge-name-status.txt resolved-merge-stat.txt \\
+            for f in fixed-revisions.txt merge-base.txt ponwrt-paths.txt immortalwrt-paths.txt \
+              overlapping-paths.txt ponwrt-only-paths.txt immortalwrt-only-paths.txt \
+              expected-overlap.txt path-counts.txt pre-resolution-status.txt \
+              unresolved-before-resolution.txt expected-conflicts.txt \
+              conflict-resolution-report.tsv post-resolution-status.txt \
+              airoha-efuse-thermal-checks.txt shared-path-checks.txt \
+              ponwrt-only-path-audit.tsv ponwrt-only-path-result.txt \
+              resolved-merge-name-status.txt resolved-merge-stat.txt \
               resolved-merge-status.txt final-acceptance.txt; do
               [ ! -f "$WORKTREE/$f" ] || cp "$WORKTREE/$f" "$GITHUB_WORKSPACE/"
             done
