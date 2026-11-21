@@ -11,7 +11,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 concurrency:
   group: upstream-compatibility-watch
@@ -74,20 +73,7 @@ jobs:
             fi
           } > upstream-review.md
 
-          if [[ -s upstream-changes.tsv && "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
-            existing="$(gh issue list --state open --json number,title --jq '.[] | select(.title == "Upstream compatibility review required") | .number' | head -n1 || true)"
-            if [[ -z "$existing" ]]; then
-              gh issue create \
-                --title "Upstream compatibility review required" \
-                --body-file upstream-review.md
-            else
-              latest="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${existing}/comments" --jq 'if length == 0 then "" else last.body end' || true)"
-              report="$(cat upstream-review.md)"
-              if [[ "$latest" != "$report" ]]; then
-                gh issue comment "$existing" --body-file upstream-review.md
-              fi
-            fi
-          fi
+          cat upstream-review.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Preserve upstream inspection report
         if: always()
