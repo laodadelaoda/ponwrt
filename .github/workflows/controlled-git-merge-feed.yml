@@ -299,7 +299,9 @@ jobs:
               fi
 
               if [ "$feed" = pon_userspace ]; then
-                for package_name in airoha-pon-daemons airoha-ponctl luci-app-iptv luci-app-pon; do
+                # The source directory is airoha-pon-daemons, but its actual
+                # OpenWrt binary package name is airoha-pond (see Package/airoha-pond).
+                for package_name in airoha-pond airoha-ponctl luci-app-iptv luci-app-pon; do
                   if grep -Eq "^${package_name}[[:space:]]" "$listing"; then
                     echo "required_package_${package_name}=present"
                   else
@@ -356,7 +358,9 @@ jobs:
               cp "$source_file" "$GITHUB_WORKSPACE/feed-diagnostics/expected/pon_userspace/$package_name/dump.txt"
               echo "$package_name=PRESENT:$source_file" >> "$GITHUB_WORKSPACE/feed-dump-collection-status.txt"
             else
-              echo "$package_name=MISSING" >> "$GITHUB_WORKSPACE/feed-dump-collection-status.txt"
+              # dump.txt is emitted only when the scanner creates diagnostic output;
+              # its absence after a clean scan is not a package-index failure.
+              echo "$package_name=NOT_GENERATED" >> "$GITHUB_WORKSPACE/feed-dump-collection-status.txt"
             fi
           done
           find "$GITHUB_WORKSPACE/feed-diagnostics" -type f -print | sort > "$GITHUB_WORKSPACE/feed-diagnostics-file-list.txt"
