@@ -1,60 +1,83 @@
-name: PonWrt ImmortalWrt Sync Git Environment
+name: PonWrt ImmortalWrt Controlled Sync Preview
 
 on:
   workflow_dispatch:
     inputs:
       operation:
-        description: "Run read-only Git history and merge preflight"
+        description: "Run fixed-SHA controlled merge preview and acceptance"
         required: true
         type: choice
         options:
-          - inspect
-        default: inspect
+          - resolved-preview
+        default: resolved-preview
 
 permissions:
   contents: read
 
 concurrency:
-  group: ponwrt-immortalwrt-sync-${{ github.ref }}
+  group: ponwrt-immortalwrt-controlled-preview
   cancel-in-progress: false
 
+env:
+  TARGET_SHA: 3f1cd99bb9a945ac33a01fdd37752e222feb5c7d
+  UPSTREAM_SHA: 6003f6b8c3278a27712f4fdaaa8d1e5faa2b1f54
+  EXPECTED_MERGE_BASE: 4765b657625ec5bbda74b44400465fe043802b30
+
 jobs:
-  git-sync:
+  controlled-preview:
     if: github.ref == 'refs/heads/epon1g-nokia-xg-040g-md'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Checkout target branch with full history
+      - name: Checkout workflow revision
         uses: actions/checkout@v4
         with:
           ref: epon1g-nokia-xg-040g-md
           fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
 
-      - name: Configure Git and fetch upstream
+      - name: Fetch and verify fixed source revisions
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote add immortalwrt https://github.com/immortalwrt/immortalwrt.git
+          git fetch --no-tags origin "$TARGET_SHA"
           git fetch --no-tags immortalwrt master
-          echo "TARGET_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
-          echo "UPSTREAM_HEAD=$(git rev-parse immortalwrt/master)" >> "$GITHUB_ENV"
-          echo "MERGE_BASE=$(git merge-base HEAD immortalwrt/master)" >> "$GITHUB_ENV"
+          test "$(git rev-parse "$TARGET_SHA^{commit}")" = "$TARGET_SHA"
+          test "$(git rev-parse immortalwrt/master)" = "$UPSTREAM_SHA"
+          test "$(git merge-base "$TARGET_SHA" "$UPSTREAM_SHA")" = "$EXPECTED_MERGE_BASE"
+          {
+            echo "TARGET_SHA=$TARGET_SHA"
+            echo "UPSTREAM_SHA=$UPSTREAM_SHA"
+            echo "MERGE_BASE=$EXPECTED_MERGE_BASE"
+          } | tee fixed-revisions.txt
 
-      - name: Verify expected history and report overlap
+      - name: Create isolated temporary merge worktree
         shell: bash
         run: |
           set -euo pipefail
-          test "$MERGE_BASE" = "4765b657625ec5bbda74b44400465fe043802b30"
-          git status --short
-          git rev-list --left-right --count HEAD...immortalwrt/master | tee commit-counts.txt
-          git diff --name-status "$MERGE_BASE"..HEAD > ponwrt-changes.txt
-          git diff --name-status "$MERGE_BASE"..immortalwrt/master > immortalwrt-changes.txt
-          git diff --name-only "$MERGE_BASE"..HEAD > ponwrt-paths.txt
-          git diff --name-only "$MERGE_BASE"..immortalwrt/master > immortalwrt-paths.txt
-          comm -12 <(sort ponwrt-paths.txt) <(sort immortalwrt-paths.txt) > overlapping-paths.txt
+          WORKTREE="$RUNNER_TEMP/ponwrt-controlled-merge"
+          echo "WORKTREE=$WORKTREE" >> "$GITHUB_ENV"
+          git worktree add --detach "$WORKTREE" "$TARGET_SHA"
+          git -C "$WORKTREE" config user.name "GitHub Actions Preview"
+          git -C "$WORKTREE" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$WORKTREE" config merge.conflictStyle merge
+          git -C "$WORKTREE" remote add immortalwrt https://github.com/immortalwrt/immortalwrt.git
+          git -C "$WORKTREE" fetch --no-tags immortalwrt "$UPSTREAM_SHA"
+          test "$(git -C "$WORKTREE" rev-parse FETCH_HEAD)" = "$UPSTREAM_SHA"
+          git -C "$WORKTREE" merge-base HEAD "$UPSTREAM_SHA" | tee merge-base.txt
+          test "$(cat merge-base.txt)" = "$EXPECTED_MERGE_BASE"
+
+      - name: Capture path ownership before merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORKTREE"
+          git diff --name-only "$EXPECTED_MERGE_BASE" "$TARGET_SHA" | sort -u > ponwrt-paths.txt
+          git diff --name-only "$EXPECTED_MERGE_BASE" "$UPSTREAM_SHA" | sort -u > immortalwrt-paths.txt
+          comm -12 ponwrt-paths.txt immortalwrt-paths.txt > overlapping-paths.txt
+          comm -23 ponwrt-paths.txt immortalwrt-paths.txt > ponwrt-only-paths.txt
+          comm -23 immortalwrt-paths.txt ponwrt-paths.txt > immortalwrt-only-paths.txt
           cat > expected-overlap.txt <<'EOF'
           include/image.mk
           package/network/config/firewall4/Makefile
@@ -66,35 +89,247 @@ jobs:
           target/linux/airoha/patches-6.18/402-09-thermal-drivers-airoha-read-the-EN7581-CPU-sensor.patch
           EOF
           diff -u <(sort expected-overlap.txt) overlapping-paths.txt
+          printf 'PonWrt changed paths: %s\nImmortalWrt changed paths: %s\nOverlapping paths: %s\nPonWrt-only paths: %s\nImmortalWrt-only paths: %s\n' \
+            "$(wc -l < ponwrt-paths.txt)" "$(wc -l < immortalwrt-paths.txt)" \
+            "$(wc -l < overlapping-paths.txt)" "$(wc -l < ponwrt-only-paths.txt)" \
+            "$(wc -l < immortalwrt-only-paths.txt)" | tee path-counts.txt
 
-      - name: Create merge preview
+      - name: Merge upstream in temporary worktree
+        id: merge
         shell: bash
         run: |
           set -euo pipefail
-          git merge-tree "$(git merge-base HEAD immortalwrt/master)" HEAD immortalwrt/master > merge-tree-preview.txt || true
-          git merge --no-commit --no-ff immortalwrt/master || {
-            git status --short > merge-conflicts.txt
-            echo "Merge has conflicts; no commit or push was performed."
-            exit 2
-          }
-          git status --short > merge-preview-status.txt
-          git diff --cached --stat > merge-preview-stat.txt
-          git merge --abort
+          cd "$WORKTREE"
+          git merge --no-commit --no-ff "$UPSTREAM_SHA" || merge_rc=$?
+          printf '%s\n' "${merge_rc:-0}" > merge-exit-code.txt
+          git status --short > pre-resolution-status.txt
+          git diff --name-only --diff-filter=U | sort > unresolved-before-resolution.txt
+          cat > expected-conflicts.txt <<'EOF'
+          target/linux/airoha/an7581/config-6.18
+          target/linux/airoha/an7583/config-6.18
+          target/linux/airoha/dts/an7581.dtsi
+          EOF
+          diff -u <(sort expected-conflicts.txt) unresolved-before-resolution.txt
 
-      - name: Upload Git audit report
+      - name: Resolve only the three approved conflict files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORKTREE"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          strategies = {
+              "target/linux/airoha/an7581/config-6.18": "theirs",
+              "target/linux/airoha/an7583/config-6.18": "ours",
+              "target/linux/airoha/dts/an7581.dtsi": "ours",
+          }
+          report = []
+          for filename, strategy in strategies.items():
+              path = Path(filename)
+              lines = path.read_text().splitlines(keepends=True)
+              output = []
+              i = 0
+              blocks = 0
+              while i < len(lines):
+                  if not lines[i].startswith("<<<<<<< "):
+                      if lines[i].startswith(("=======", ">>>>>>> ", "||||||| ")):
+                          raise SystemExit(f"Unexpected conflict marker in {filename}:{i+1}")
+                      output.append(lines[i])
+                      i += 1
+                      continue
+                  blocks += 1
+                  i += 1
+                  ours, theirs = [], []
+                  side = "ours"
+                  while i < len(lines) and not lines[i].startswith("======="):
+                      if lines[i].startswith(("<<<<<<< ", ">>>>>>> ")):
+                          raise SystemExit(f"Malformed conflict block in {filename}:{i+1}")
+                      ours.append(lines[i])
+                      i += 1
+                  if i >= len(lines):
+                      raise SystemExit(f"Missing separator in {filename}")
+                  i += 1
+                  side = "theirs"
+                  while i < len(lines) and not lines[i].startswith(">>>>>>> "):
+                      if lines[i].startswith(("<<<<<<< ", "=======")):
+                          raise SystemExit(f"Malformed conflict block in {filename}:{i+1}")
+                      theirs.append(lines[i])
+                      i += 1
+                  if i >= len(lines):
+                      raise SystemExit(f"Missing end marker in {filename}")
+                  i += 1
+                  output.extend(ours if strategy == "ours" else theirs)
+              if blocks == 0:
+                  raise SystemExit(f"Expected conflict block missing in {filename}")
+              path.write_text("".join(output))
+              report.append(f"{filename}\tconflict_blocks={blocks}\tselected={strategy}")
+          Path("conflict-resolution-report.tsv").write_text("\n".join(report) + "\n")
+          PY
+          git add \
+            target/linux/airoha/an7581/config-6.18 \
+            target/linux/airoha/an7583/config-6.18 \
+            target/linux/airoha/dts/an7581.dtsi
+          test -z "$(git diff --name-only --diff-filter=U)"
+          test -z "$(git ls-files -u)"
+          git status --short > post-resolution-status.txt
+
+      - name: Validate Airoha eFuse and thermal pairing
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORKTREE"
+          A1=target/linux/airoha/an7581/config-6.18
+          A3=target/linux/airoha/an7583/config-6.18
+          D1=target/linux/airoha/dts/an7581.dtsi
+          D3=target/linux/airoha/dts/an7583.dtsi
+          P=target/linux/airoha/patches-6.18
+          {
+            grep -qx 'CONFIG_NVMEM_AIROHA_SMC_EFUSES=y' "$A1"
+            grep -qx '# CONFIG_NVMEM_AIROHA_EFUSE is not set' "$A1"
+            echo "PASS AN7581 uses SMC eFuse Kconfig; legacy eFuse provider disabled"
+
+            grep -qx 'CONFIG_NVMEM_AIROHA_EFUSE=y' "$A3"
+            ! grep -q '^CONFIG_NVMEM_AIROHA_SMC_EFUSES=y$' "$A3"
+            test -f "$P/403-nvmem-airoha-add-an7583-efuse.patch"
+            grep -q '^config NVMEM_AIROHA_EFUSE$' "$P/403-nvmem-airoha-add-an7583-efuse.patch"
+            grep -q 'compatible = "airoha,an7583-efuse"' "$P/403-nvmem-airoha-add-an7583-efuse.patch"
+            grep -q 'compatible = "airoha,an7583-efuse"' "$D3"
+            echo "PASS AN7583 403 patch, DTS compatible, and Kconfig are paired"
+
+            test -f "$P/230-v7.3-nvmem-airoha-Add-support-for-SMC-eFUSE.patch"
+            test -f "$P/231-nvmem-airoha-smc-efuses-Fix-the-SMC-function-ID-for-eFuse-read.patch"
+            test "$P/230-v7.3-nvmem-airoha-Add-support-for-SMC-eFUSE.patch" \
+              < "$P/231-nvmem-airoha-smc-efuses-Fix-the-SMC-function-ID-for-eFuse-read.patch"
+            grep -q 'CONFIG_NVMEM_AIROHA_SMC_EFUSES' "$P/230-v7.3-nvmem-airoha-Add-support-for-SMC-eFUSE.patch"
+            grep -q '0x82000005' "$P/231-nvmem-airoha-smc-efuses-Fix-the-SMC-function-ID-for-eFuse-read.patch"
+            echo "PASS AN7581 230/231 patch order and corrected SMC Function ID"
+
+            grep -q 'cpu_thermal_cpu: cpu-thermal-cpu' "$D1"
+            grep -q 'polling-delay = <1000>;' "$D1"
+            grep -q 'thermal-sensors = <&thermal 1>;' "$D1"
+            echo "PASS AN7581 independent CPU ADC polling retained at 1000 ms"
+          } | tee airoha-efuse-thermal-checks.txt
+
+      - name: Validate image, firewall, and unchanged thermal patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORKTREE"
+          {
+            grep -q 'FEED_DEVICE_PACKAGES' include/image.mk
+            grep -q 'UBINIZE_PARTS_AFTER' include/image.mk
+            echo "PASS include/image.mk retains FEED_DEVICE_PACKAGES and UBINIZE_PARTS_AFTER"
+
+            grep -qx 'PKG_RELEASE:=2' package/network/config/firewall4/Makefile
+            grep -qx 'PKG_SOURCE_VERSION:=3722eadc088c3ab81389596ca9796112b436583a' package/network/config/firewall4/Makefile
+            test "$(git rev-parse HEAD:package/network/config/firewall4/patches/001-add-bridge-flowtable-support.patch)" = \
+              "0989908208791fe3237c139212fcdf859b3b4bc7"
+            echo "PASS firewall4 upstream source revision, release 2, and local bridge-flowtable patch preserved"
+
+            test "$(git rev-parse HEAD:target/linux/airoha/patches-6.18/402-08-v7.4-thermal-drivers-airoha-Request-the-EN7581-IRQ-after-zone-registration.patch)" = \
+              "e6052fc40d260f774d246320b491db4b0bc00926"
+            test "$(git rev-parse HEAD:target/linux/airoha/patches-6.18/402-09-thermal-drivers-airoha-read-the-EN7581-CPU-sensor.patch)" = \
+              "d87de326590262cbdb734047b29b72853b2fc306"
+            echo "PASS 402-08 and 402-09 remain byte-identical"
+          } | tee shared-path-checks.txt
+
+      - name: Verify every PonWrt-only path byte-for-byte
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORKTREE"
+          : > ponwrt-only-path-audit.tsv
+          while IFS= read -r path; do
+            test -n "$path" || continue
+            if ! git cat-file -e "$TARGET_SHA:$path" 2>/dev/null; then
+              echo "BASE_MISSING $path" >> ponwrt-only-path-audit.tsv
+              exit 1
+            fi
+            if ! git cat-file -e "HEAD:$path" 2>/dev/null; then
+              echo "MISSING_AFTER_MERGE $path" >> ponwrt-only-path-audit.tsv
+              exit 1
+            fi
+            before=$(git rev-parse "$TARGET_SHA:$path")
+            after=$(git rev-parse "HEAD:$path")
+            if [ "$before" != "$after" ]; then
+              printf 'CONTENT_CHANGED\t%s\t%s\t%s\n' "$path" "$before" "$after" >> ponwrt-only-path-audit.tsv
+              exit 1
+            fi
+            printf 'IDENTICAL\t%s\t%s\n' "$path" "$before" >> ponwrt-only-path-audit.tsv
+          done < ponwrt-only-paths.txt
+          test "$(wc -l < ponwrt-only-path-audit.tsv)" -eq "$(wc -l < ponwrt-only-paths.txt)"
+          echo "PASS all PonWrt-only paths are present and blob-identical to target SHA" | tee ponwrt-only-path-result.txt
+
+      - name: Final conflict, whitespace, and merge-scope checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORKTREE"
+          test -z "$(git diff --name-only --diff-filter=U)"
+          test -z "$(git ls-files -u)"
+          git diff --cached --check
+          git diff --check
+          git diff --cached --name-status > resolved-merge-name-status.txt
+          git diff --cached --stat > resolved-merge-stat.txt
+          git status --short > resolved-merge-status.txt
+          {
+            echo "PASS no unresolved paths"
+            echo "PASS git diff --cached --check"
+            echo "PASS git diff --check"
+            echo "PASS merge result staged only in disposable worktree"
+            echo "NO COMMIT CREATED"
+            echo "NO PUSH PERFORMED"
+            echo "NO BUILD OR DEVICE TEST PERFORMED"
+          } | tee final-acceptance.txt
+          git status --porcelain=v1
+
+      - name: Assemble complete audit report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "# PonWrt / ImmortalWrt controlled merge preview"
+            echo
+            echo "- Target SHA: $TARGET_SHA"
+            echo "- ImmortalWrt SHA: $UPSTREAM_SHA"
+            echo "- Expected merge base: $EXPECTED_MERGE_BASE"
+            echo
+            for f in fixed-revisions.txt path-counts.txt conflict-resolution-report.tsv \
+              airoha-efuse-thermal-checks.txt shared-path-checks.txt \
+              ponwrt-only-path-result.txt final-acceptance.txt; do
+              if [ -f "$WORKTREE/$f" ]; then
+                echo "## $f"
+                cat "$WORKTREE/$f"
+                echo
+              fi
+            done
+            if [ -f "$WORKTREE/ponwrt-only-path-audit.tsv" ]; then
+              echo "## PonWrt-only path byte identity"
+              cat "$WORKTREE/ponwrt-only-path-audit.tsv"
+            fi
+          } > "$GITHUB_WORKSPACE/controlled-merge-acceptance-report.md"
+          for f in fixed-revisions.txt merge-base.txt ponwrt-paths.txt immortalwrt-paths.txt \
+            overlapping-paths.txt ponwrt-only-paths.txt immortalwrt-only-paths.txt \
+            expected-overlap.txt path-counts.txt pre-resolution-status.txt \
+            unresolved-before-resolution.txt expected-conflicts.txt \
+            conflict-resolution-report.tsv post-resolution-status.txt \
+            airoha-efuse-thermal-checks.txt shared-path-checks.txt \
+            ponwrt-only-path-audit.tsv ponwrt-only-path-result.txt \
+            resolved-merge-name-status.txt resolved-merge-stat.txt \
+            resolved-merge-status.txt final-acceptance.txt; do
+            [ ! -f "$WORKTREE/$f" ] || cp "$WORKTREE/$f" "$GITHUB_WORKSPACE/"
+          done
+
+      - name: Upload controlled merge acceptance artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ponwrt-immortalwrt-git-sync-report
+          name: ponwrt-immortalwrt-controlled-merge-acceptance
           path: |
-            commit-counts.txt
-            ponwrt-changes.txt
-            immortalwrt-changes.txt
-            overlapping-paths.txt
-            expected-overlap.txt
-            merge-tree-preview.txt
-            merge-conflicts.txt
-            merge-preview-status.txt
-            merge-preview-stat.txt
-          if-no-files-found: ignore
+            controlled-merge-acceptance-report.md
+            *.txt
+            *.tsv
+          if-no-files-found: warn
           retention-days: 30
