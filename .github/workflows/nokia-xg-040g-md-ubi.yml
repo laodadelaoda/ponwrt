@@ -9,6 +9,7 @@ on:
       - .github/workflows/nokia-xg-040g-md-ubi.yml
       - feeds.conf.default
       - target/linux/airoha/**
+      - target/linux/generic/**
   workflow_dispatch:
 
 permissions:
