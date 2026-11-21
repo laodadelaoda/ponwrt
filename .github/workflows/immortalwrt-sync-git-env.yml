@@ -222,13 +222,13 @@ jobs:
 
             grep -qx 'PKG_RELEASE:=2' package/network/config/firewall4/Makefile
             grep -qx 'PKG_SOURCE_VERSION:=3722eadc088c3ab81389596ca9796112b436583a' package/network/config/firewall4/Makefile
-            test "$(git rev-parse HEAD:package/network/config/firewall4/patches/001-add-bridge-flowtable-support.patch)" = \
+            test "$(git rev-parse :package/network/config/firewall4/patches/001-add-bridge-flowtable-support.patch)" = \
               "0989908208791fe3237c139212fcdf859b3b4bc7"
             echo "PASS firewall4 upstream source revision, release 2, and local bridge-flowtable patch preserved"
 
-            test "$(git rev-parse HEAD:target/linux/airoha/patches-6.18/402-08-v7.4-thermal-drivers-airoha-Request-the-EN7581-IRQ-after-zone-registration.patch)" = \
+            test "$(git rev-parse :target/linux/airoha/patches-6.18/402-08-v7.4-thermal-drivers-airoha-Request-the-EN7581-IRQ-after-zone-registration.patch)" = \
               "e6052fc40d260f774d246320b491db4b0bc00926"
-            test "$(git rev-parse HEAD:target/linux/airoha/patches-6.18/402-09-thermal-drivers-airoha-read-the-EN7581-CPU-sensor.patch)" = \
+            test "$(git rev-parse :target/linux/airoha/patches-6.18/402-09-thermal-drivers-airoha-read-the-EN7581-CPU-sensor.patch)" = \
               "d87de326590262cbdb734047b29b72853b2fc306"
             echo "PASS 402-08 and 402-09 remain byte-identical"
           } | tee shared-path-checks.txt
@@ -242,19 +242,19 @@ jobs:
           while IFS= read -r path; do
             test -n "$path" || continue
             if git cat-file -e "$TARGET_SHA:$path" 2>/dev/null; then
-              if ! git cat-file -e "HEAD:$path" 2>/dev/null; then
+              if ! git rev-parse --verify ":$path" 2>/dev/null; then
                 echo "MISSING_AFTER_MERGE $path" >> ponwrt-only-path-audit.tsv
                 exit 1
               fi
               before=$(git rev-parse "$TARGET_SHA:$path")
-              after=$(git rev-parse "HEAD:$path")
+              after=$(git rev-parse ":$path")
               if [ "$before" != "$after" ]; then
                 printf 'CONTENT_CHANGED\\t%s\\t%s\\t%s\\n' "$path" "$before" "$after" >> ponwrt-only-path-audit.tsv
                 exit 1
               fi
               printf 'IDENTICAL\\t%s\\t%s\\n' "$path" "$before" >> ponwrt-only-path-audit.tsv
             else
-              if git cat-file -e "HEAD:$path" 2>/dev/null; then
+              if git rev-parse --verify ":$path" 2>/dev/null; then
                 echo "RESURRECTED_AFTER_MERGE $path" >> ponwrt-only-path-audit.tsv
                 exit 1
               fi
