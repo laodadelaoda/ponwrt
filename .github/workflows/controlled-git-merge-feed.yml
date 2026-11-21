@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  TARGET_SHA: 6cd1db240ce5027c8f680def70264d2c9f00c47c
+  TARGET_SHA: ${{ github.sha }}
   UPSTREAM_SHA: 6003f6b8c3278a27712f4fdaaa8d1e5faa2b1f54
   EXPECTED_MERGE_BASE: 4765b657625ec5bbda74b44400465fe043802b30
   DRIVERS_SHA: e4a43262a7dbf9abe269e5661e81dc302a37d822
@@ -56,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "$WORKTREE"
-          git diff --name-only "$EXPECTED_MERGE_BASE" "$TARGET_SHA" | sort -u > ponwrt-paths.txt
+          git diff --name-only "$EXPECTED_MERGE_BASE" "$TARGET_SHA" | grep -Fvx '.github/workflows/controlled-git-merge-feed.yml' | sort -u > ponwrt-paths.txt
           git diff --name-only "$EXPECTED_MERGE_BASE" "$UPSTREAM_SHA" | sort -u > immortalwrt-paths.txt
           comm -12 ponwrt-paths.txt immortalwrt-paths.txt > overlapping-paths.txt
           comm -23 ponwrt-paths.txt immortalwrt-paths.txt > ponwrt-only-paths.txt
@@ -156,8 +156,8 @@ jobs:
           p = Path("feeds.conf.default")
           lines = p.read_text().splitlines()
           replacements = {
-              "pon_drivers": f"src-git pon_drivers https://github.com/pbs05/openwrt-pon-drivers.git^{drivers}",
-              "pon_userspace": f"src-git pon_userspace https://github.com/pbs05/openwrt-pon-userspace.git^{userspace}",
+              "pon_drivers": f"src-git pon_drivers https://github.com/laodadelaoda/openwrt-pon-drivers.git^{drivers}",
+              "pon_userspace": f"src-git pon_userspace https://github.com/laodadelaoda/openwrt-pon-userspace.git^{userspace}",
           }
           found = set()
           out = []
@@ -260,7 +260,7 @@ jobs:
           echo "PASS: Feed Git checkouts and fixed HEADs verified; metadata validation is a separate gate." | tee "$GITHUB_WORKSPACE/feed-git-result.txt"
 
       - name: Validate each Feed package metadata index independently
-        if: always()
+        if: success()
         shell: bash
         run: |
           set -u
