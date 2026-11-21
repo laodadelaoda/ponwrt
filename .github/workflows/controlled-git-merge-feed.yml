@@ -174,8 +174,44 @@ jobs:
           PY
           cp feeds.conf.default "$GITHUB_WORKSPACE/feeds.conf.default.pinned"
 
+          # PON userspace packages include OpenWrt package and LuCI make fragments.
+          # Populate only these two declared prerequisite feeds before scanning PON packages.
+          : > "$GITHUB_WORKSPACE/feed-base-dependencies.txt"
+          for feed in packages luci; do
+            set +e
+            ./scripts/feeds update "$feed" > "$GITHUB_WORKSPACE/feed-update-$feed.log" 2>&1
+            feed_rc=$?
+            set -e
+            {
+              echo "===== scripts/feeds update $feed (exit=$feed_rc) ====="
+              cat "$GITHUB_WORKSPACE/feed-update-$feed.log"
+              echo
+            } >> "$GITHUB_WORKSPACE/feed-update.log"
+            if [ "$feed_rc" -ne 0 ]; then
+              echo "$feed=UPDATE_FAILED:$feed_rc" >> "$GITHUB_WORKSPACE/feed-base-dependencies.txt"
+              exit 1
+            fi
+            if [ ! -d "feeds/$feed/.git" ]; then
+              echo "$feed=GIT_CHECKOUT_MISSING" >> "$GITHUB_WORKSPACE/feed-base-dependencies.txt"
+              exit 1
+            fi
+            {
+              echo "[$feed]"
+              git -C "feeds/$feed" remote -v
+              echo "HEAD=$(git -C "feeds/$feed" rev-parse HEAD)"
+            } >> "$GITHUB_WORKSPACE/feed-base-dependencies.txt"
+          done
+          test -f feeds/packages/lang/rust/rust-package.mk
+          test -f feeds/luci/luci.mk
+          {
+            echo "rust_package_mk=present"
+            echo "luci_mk=present"
+          } >> "$GITHUB_WORKSPACE/feed-base-dependencies.txt"
+
           # Preserve complete updater/scanner output and its real exit status.
           : > "$GITHUB_WORKSPACE/feed-update.log"
+          cat "$GITHUB_WORKSPACE/feed-update-packages.log" >> "$GITHUB_WORKSPACE/feed-update.log"
+          cat "$GITHUB_WORKSPACE/feed-update-luci.log" >> "$GITHUB_WORKSPACE/feed-update.log"
           update_rc=0
           for feed in pon_drivers pon_userspace; do
             set +e
@@ -332,7 +368,7 @@ jobs:
             echo "- Drivers Feed SHA: $DRIVERS_SHA"
             echo "- Userspace Feed SHA: $USERSPACE_SHA"
             echo
-            for f in merge-result-sha.txt path-counts.txt airoha-compatibility.txt path-integrity-result.txt feed-remotes-heads.txt feed-git-result.txt feed-git-status.txt feed-metadata-result.txt feed-dump-collection-status.txt; do
+            for f in merge-result-sha.txt path-counts.txt airoha-compatibility.txt path-integrity-result.txt feed-remotes-heads.txt feed-git-result.txt feed-git-status.txt feed-metadata-result.txt feed-dump-collection-status.txt feed-base-dependencies.txt; do
               if [ -f "$GITHUB_WORKSPACE/$f" ]; then
                 echo "## $f"
                 cat "$GITHUB_WORKSPACE/$f"
@@ -364,6 +400,9 @@ jobs:
             feeds.conf.default.before
             feeds.conf.default.pinned
             feed-update.log
+            feed-update-packages.log
+            feed-update-luci.log
+            feed-base-dependencies.txt
             feed-update-pon_drivers.log
             feed-update-pon_userspace.log
             feed-remotes-heads.txt
