@@ -27,6 +27,8 @@ jobs:
     steps:
       - name: Checkout PonWrt
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
 
       - name: Free build space
         run: |
@@ -49,8 +51,24 @@ jobs:
             qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo \
             uglifyjs unzip wget xmlto xxd zlib1g-dev zstd
 
-      - name: Update and install feeds
+      - name: Verify main source revision
+        shell: bash
         run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$GITHUB_SHA"
+          echo "PonWrt source SHA: $actual" | tee source-revisions.txt
+
+      - name: Update and install pinned feeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/feeds update pon_drivers pon_userspace
+          drivers_sha="$(git -C feeds/pon_drivers rev-parse HEAD)"
+          userspace_sha="$(git -C feeds/pon_userspace rev-parse HEAD)"
+          test "$drivers_sha" = "47ad31349807099cf84c8ca9fb1a3f10120ef9ee"
+          test "$userspace_sha" = "a903fcc80f4b89f9b9e59a02d3ba1fc5550819a5"
+          printf 'pon_drivers SHA: %s\\npon_userspace SHA: %s\\n' "$drivers_sha" "$userspace_sha" | tee -a source-revisions.txt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
