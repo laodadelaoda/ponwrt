@@ -179,6 +179,7 @@ jobs:
         with:
           name: ponwrt-nokia-xg-040g-md-ubi-build-diagnostics
           path: |
+            source-revisions.txt
             single-device-config-check.txt
             download.log
             build.log
