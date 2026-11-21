@@ -177,6 +177,7 @@ jobs:
           # PON userspace packages include OpenWrt package and LuCI make fragments.
           # Populate only these two declared prerequisite feeds before scanning PON packages.
           : > "$GITHUB_WORKSPACE/feed-base-dependencies.txt"
+          : > "$GITHUB_WORKSPACE/feed-update.log"
           for feed in packages luci; do
             set +e
             ./scripts/feeds update "$feed" > "$GITHUB_WORKSPACE/feed-update-$feed.log" 2>&1
@@ -209,15 +210,6 @@ jobs:
             exit 1
           fi
 
-          # Preserve complete updater output from prerequisite and PON feeds.
-          : > "$GITHUB_WORKSPACE/feed-update.log"
-          for feed in packages luci pon_drivers pon_userspace; do
-            {
-              echo "===== scripts/feeds update $feed ====="
-              cat "$GITHUB_WORKSPACE/feed-update-$feed.log"
-              echo
-            } >> "$GITHUB_WORKSPACE/feed-update.log"
-          done
           update_rc=0
           for feed in pon_drivers pon_userspace; do
             set +e
@@ -233,6 +225,15 @@ jobs:
           done
           printf 'scripts_feeds_update_exit=%s\n' "$update_rc" > "$GITHUB_WORKSPACE/feed-git-status.txt"
           test "$update_rc" -eq 0
+
+          # Aggregate complete logs only after all four feed updates have run.
+          for feed in packages luci pon_drivers pon_userspace; do
+            {
+              echo "===== scripts/feeds update $feed ====="
+              cat "$GITHUB_WORKSPACE/feed-update-$feed.log"
+              echo
+            } >> "$GITHUB_WORKSPACE/feed-update.log"
+          done
 
           git_ok=1
           : > "$GITHUB_WORKSPACE/feed-remotes-heads.txt"
