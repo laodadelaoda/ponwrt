@@ -24,7 +24,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Compare upstream references with reviewed baseline
+      - name: Compare upstream references with baseline
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -54,17 +54,17 @@ jobs:
           {
             echo "# Upstream compatibility review"
             echo
-            echo "The following upstream references differ from the last reviewed baseline."
+            echo "The following upstream references differ from the initial observed baseline."
             echo "This is a source-change notification only; no source was merged and no firmware was built."
             echo
             if [[ -s upstream-changes.tsv ]]; then
-              echo "| Source | Repository/ref | Reviewed baseline | Current upstream |"
+              echo "| Source | Repository/ref | Baseline | Current upstream |"
               echo "|---|---|---|---|"
               while IFS=$'\t' read -r name repository ref baseline current; do
                 echo "| ${name} | ${repository}@${ref} | `${baseline}` | `${current}` |"
               done < upstream-changes.tsv
               echo
-              echo "Review the base distribution/kernel, PonWrt platform changes and each feed independently. Update upstream-sources.json only after review and acceptance."
+              echo "Review base-system/kernel changes, PonWrt platform changes and each feed independently. Advance upstream-sources.json only after review and acceptance."
             else
               echo "No upstream movement detected."
             fi
@@ -77,8 +77,11 @@ jobs:
                 --title "Upstream compatibility review required" \
                 --body-file upstream-review.md
             else
-              echo "An open upstream review issue already exists: #${existing}"
-              gh issue comment "$existing" --body-file upstream-review.md
+              latest="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${existing}/comments" --jq 'if length == 0 then "" else last.body end' || true)"
+              report="$(cat upstream-review.md)"
+              if [[ "$latest" != "$report" ]]; then
+                gh issue comment "$existing" --body-file upstream-review.md
+              fi
             fi
           fi
 

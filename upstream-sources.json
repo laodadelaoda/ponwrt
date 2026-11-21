@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "baseline_semantics": "last-reviewed-upstream-commit; monitoring only; not a build lock",
+  "baseline_semantics": "initial-observed-reference; monitoring only; not compatibility certification; not a build lock",
   "sources": [
     {
       "name": "PonWrt main source",

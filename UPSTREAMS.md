@@ -23,7 +23,7 @@ PonWrt is maintained against two distinct upstreams. They must not be merged or 
 
 ## Baseline semantics
 
-`upstream-sources.json` records the last reviewed upstream commit for each source. It is **not** a build lock and is not used to silently pin or change feed contents. The daily workflow reports movement relative to this reviewed baseline and opens one tracking issue. This keeps upstream monitoring separate from source integration.
+`upstream-sources.json` records the initial observed commit for each source. These starting references are a monitoring baseline, **not a declaration that all nine source revisions have been compatibility-tested**, and not a build lock. The daily workflow reports movement relative to this baseline and opens one tracking issue. The baseline must only be advanced after reviewing the corresponding source changes. This keeps upstream monitoring separate from source integration.
 
 ## Current build behavior
 
