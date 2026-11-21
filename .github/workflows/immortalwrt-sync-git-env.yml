@@ -304,9 +304,12 @@ jobs:
               echo
             fi
             if [ -n "${WORKTREE:-}" ] && [ -d "$WORKTREE" ]; then
-              for f in fixed-revisions.txt path-counts.txt conflict-resolution-report.tsv \\
-                airoha-efuse-thermal-checks.txt shared-path-checks.txt \\
-                ponwrt-only-path-result.txt final-acceptance.txt; do
+              for f in merge-base.txt path-counts.txt expected-conflicts.txt \\
+                unresolved-before-resolution.txt conflict-resolution-report.tsv \\
+                post-resolution-status.txt airoha-efuse-thermal-checks.txt \\
+                shared-path-checks.txt ponwrt-only-path-result.txt \\
+                resolved-merge-name-status.txt resolved-merge-stat.txt \\
+                resolved-merge-status.txt final-acceptance.txt; do
                 if [ -f "$WORKTREE/$f" ]; then
                   echo "## $f"
                   cat "$WORKTREE/$f"
