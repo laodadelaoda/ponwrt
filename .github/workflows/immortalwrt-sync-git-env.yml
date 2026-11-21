@@ -64,7 +64,7 @@ jobs:
           git -C "$WORKTREE" config merge.conflictStyle merge
           git -C "$WORKTREE" fetch --no-tags immortalwrt "$UPSTREAM_SHA"
           test "$(git -C "$WORKTREE" rev-parse FETCH_HEAD)" = "$UPSTREAM_SHA"
-          git -C "$WORKTREE" merge-base HEAD "$UPSTREAM_SHA" | tee merge-base.txt
+          git -C "$WORKTREE" merge-base HEAD "$UPSTREAM_SHA" | tee "$WORKTREE/merge-base.txt"
           test "$(cat merge-base.txt)" = "$EXPECTED_MERGE_BASE"
 
       - name: Capture path ownership before merge
@@ -299,6 +299,11 @@ jobs:
             echo "- ImmortalWrt SHA: $UPSTREAM_SHA"
             echo "- Expected merge base: $EXPECTED_MERGE_BASE"
             echo
+            if [ -f "$GITHUB_WORKSPACE/fixed-revisions.txt" ]; then
+              echo "## Fixed revisions"
+              cat "$GITHUB_WORKSPACE/fixed-revisions.txt"
+              echo
+            fi
             if [ -n "${WORKTREE:-}" ] && [ -d "$WORKTREE" ]; then
               for f in fixed-revisions.txt path-counts.txt conflict-resolution-report.tsv \\
                 airoha-efuse-thermal-checks.txt shared-path-checks.txt \\
