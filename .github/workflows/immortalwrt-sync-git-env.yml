@@ -190,7 +190,8 @@ jobs:
             grep -qx 'CONFIG_NVMEM_AIROHA_EFUSE=y' "$A3"
             ! grep -q '^CONFIG_NVMEM_AIROHA_SMC_EFUSES=y$' "$A3"
             test -f "$P/403-nvmem-airoha-add-an7583-efuse.patch"
-            grep -q '^\\+config NVMEM_AIROHA_EFUSE            grep -q 'compatible = "airoha,an7583-efuse"' "$P/403-nvmem-airoha-add-an7583-efuse.patch"
+            grep -q '^\+config NVMEM_AIROHA_EFUSE$' "$P/403-nvmem-airoha-add-an7583-efuse.patch"
+            grep -q 'compatible = "airoha,an7583-efuse"' "$P/403-nvmem-airoha-add-an7583-efuse.patch"
             grep -q 'compatible = "airoha,an7583-efuse"' "$D3"
             echo "PASS AN7583 403 patch, DTS compatible, and Kconfig are paired"
 
