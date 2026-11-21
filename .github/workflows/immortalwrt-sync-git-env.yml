@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  TARGET_SHA: 3f1cd99bb9a945ac33a01fdd37752e222feb5c7d
+  TARGET_SHA: ${{ github.sha }}
   UPSTREAM_SHA: 6003f6b8c3278a27712f4fdaaa8d1e5faa2b1f54
   EXPECTED_MERGE_BASE: 4765b657625ec5bbda74b44400465fe043802b30
 
@@ -62,7 +62,6 @@ jobs:
           git -C "$WORKTREE" config user.name "GitHub Actions Preview"
           git -C "$WORKTREE" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C "$WORKTREE" config merge.conflictStyle merge
-          git -C "$WORKTREE" remote add immortalwrt https://github.com/immortalwrt/immortalwrt.git
           git -C "$WORKTREE" fetch --no-tags immortalwrt "$UPSTREAM_SHA"
           test "$(git -C "$WORKTREE" rev-parse FETCH_HEAD)" = "$UPSTREAM_SHA"
           git -C "$WORKTREE" merge-base HEAD "$UPSTREAM_SHA" | tee merge-base.txt
@@ -242,21 +241,25 @@ jobs:
           : > ponwrt-only-path-audit.tsv
           while IFS= read -r path; do
             test -n "$path" || continue
-            if ! git cat-file -e "$TARGET_SHA:$path" 2>/dev/null; then
-              echo "BASE_MISSING $path" >> ponwrt-only-path-audit.tsv
-              exit 1
+            if git cat-file -e "$TARGET_SHA:$path" 2>/dev/null; then
+              if ! git cat-file -e "HEAD:$path" 2>/dev/null; then
+                echo "MISSING_AFTER_MERGE $path" >> ponwrt-only-path-audit.tsv
+                exit 1
+              fi
+              before=$(git rev-parse "$TARGET_SHA:$path")
+              after=$(git rev-parse "HEAD:$path")
+              if [ "$before" != "$after" ]; then
+                printf 'CONTENT_CHANGED\\t%s\\t%s\\t%s\\n' "$path" "$before" "$after" >> ponwrt-only-path-audit.tsv
+                exit 1
+              fi
+              printf 'IDENTICAL\\t%s\\t%s\\n' "$path" "$before" >> ponwrt-only-path-audit.tsv
+            else
+              if git cat-file -e "HEAD:$path" 2>/dev/null; then
+                echo "RESURRECTED_AFTER_MERGE $path" >> ponwrt-only-path-audit.tsv
+                exit 1
+              fi
+              printf 'DELETED_PRESERVED\\t%s\\n' "$path" >> ponwrt-only-path-audit.tsv
             fi
-            if ! git cat-file -e "HEAD:$path" 2>/dev/null; then
-              echo "MISSING_AFTER_MERGE $path" >> ponwrt-only-path-audit.tsv
-              exit 1
-            fi
-            before=$(git rev-parse "$TARGET_SHA:$path")
-            after=$(git rev-parse "HEAD:$path")
-            if [ "$before" != "$after" ]; then
-              printf 'CONTENT_CHANGED\t%s\t%s\t%s\n' "$path" "$before" "$after" >> ponwrt-only-path-audit.tsv
-              exit 1
-            fi
-            printf 'IDENTICAL\t%s\t%s\n' "$path" "$before" >> ponwrt-only-path-audit.tsv
           done < ponwrt-only-paths.txt
           test "$(wc -l < ponwrt-only-path-audit.tsv)" -eq "$(wc -l < ponwrt-only-paths.txt)"
           echo "PASS all PonWrt-only paths are present and blob-identical to target SHA" | tee ponwrt-only-path-result.txt
@@ -296,31 +299,37 @@ jobs:
             echo "- ImmortalWrt SHA: $UPSTREAM_SHA"
             echo "- Expected merge base: $EXPECTED_MERGE_BASE"
             echo
-            for f in fixed-revisions.txt path-counts.txt conflict-resolution-report.tsv \
-              airoha-efuse-thermal-checks.txt shared-path-checks.txt \
-              ponwrt-only-path-result.txt final-acceptance.txt; do
-              if [ -f "$WORKTREE/$f" ]; then
-                echo "## $f"
-                cat "$WORKTREE/$f"
-                echo
+            if [ -n "${WORKTREE:-}" ] && [ -d "$WORKTREE" ]; then
+              for f in fixed-revisions.txt path-counts.txt conflict-resolution-report.tsv \\
+                airoha-efuse-thermal-checks.txt shared-path-checks.txt \\
+                ponwrt-only-path-result.txt final-acceptance.txt; do
+                if [ -f "$WORKTREE/$f" ]; then
+                  echo "## $f"
+                  cat "$WORKTREE/$f"
+                  echo
+                fi
+              done
+              if [ -f "$WORKTREE/ponwrt-only-path-audit.tsv" ]; then
+                echo "## PonWrt-only path byte identity"
+                cat "$WORKTREE/ponwrt-only-path-audit.tsv"
               fi
-            done
-            if [ -f "$WORKTREE/ponwrt-only-path-audit.tsv" ]; then
-              echo "## PonWrt-only path byte identity"
-              cat "$WORKTREE/ponwrt-only-path-audit.tsv"
+            else
+              echo "Temporary merge worktree was not created; inspect failed setup step logs."
             fi
           } > "$GITHUB_WORKSPACE/controlled-merge-acceptance-report.md"
-          for f in fixed-revisions.txt merge-base.txt ponwrt-paths.txt immortalwrt-paths.txt \
-            overlapping-paths.txt ponwrt-only-paths.txt immortalwrt-only-paths.txt \
-            expected-overlap.txt path-counts.txt pre-resolution-status.txt \
-            unresolved-before-resolution.txt expected-conflicts.txt \
-            conflict-resolution-report.tsv post-resolution-status.txt \
-            airoha-efuse-thermal-checks.txt shared-path-checks.txt \
-            ponwrt-only-path-audit.tsv ponwrt-only-path-result.txt \
-            resolved-merge-name-status.txt resolved-merge-stat.txt \
-            resolved-merge-status.txt final-acceptance.txt; do
-            [ ! -f "$WORKTREE/$f" ] || cp "$WORKTREE/$f" "$GITHUB_WORKSPACE/"
-          done
+          if [ -n "${WORKTREE:-}" ] && [ -d "$WORKTREE" ]; then
+            for f in fixed-revisions.txt merge-base.txt ponwrt-paths.txt immortalwrt-paths.txt \\
+              overlapping-paths.txt ponwrt-only-paths.txt immortalwrt-only-paths.txt \\
+              expected-overlap.txt path-counts.txt pre-resolution-status.txt \\
+              unresolved-before-resolution.txt expected-conflicts.txt \\
+              conflict-resolution-report.tsv post-resolution-status.txt \\
+              airoha-efuse-thermal-checks.txt shared-path-checks.txt \\
+              ponwrt-only-path-audit.tsv ponwrt-only-path-result.txt \\
+              resolved-merge-name-status.txt resolved-merge-stat.txt \\
+              resolved-merge-status.txt final-acceptance.txt; do
+              [ ! -f "$WORKTREE/$f" ] || cp "$WORKTREE/$f" "$GITHUB_WORKSPACE/"
+            done
+          fi
 
       - name: Upload controlled merge acceptance artifacts
         if: always()
