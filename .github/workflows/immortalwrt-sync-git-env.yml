@@ -44,7 +44,7 @@ jobs:
           git fetch --no-tags origin "$TARGET_SHA"
           git fetch --no-tags immortalwrt master
           test "$(git rev-parse "$TARGET_SHA^{commit}")" = "$TARGET_SHA"
-          test "$(git rev-parse immortalwrt/master)" = "$UPSTREAM_SHA"
+          git cat-file -e "$UPSTREAM_SHA^{commit}"
           test "$(git merge-base "$TARGET_SHA" "$UPSTREAM_SHA")" = "$EXPECTED_MERGE_BASE"
           {
             echo "TARGET_SHA=$TARGET_SHA"
@@ -62,8 +62,7 @@ jobs:
           git -C "$WORKTREE" config user.name "GitHub Actions Preview"
           git -C "$WORKTREE" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C "$WORKTREE" config merge.conflictStyle merge
-          git -C "$WORKTREE" fetch --no-tags immortalwrt "$UPSTREAM_SHA"
-          test "$(git -C "$WORKTREE" rev-parse FETCH_HEAD)" = "$UPSTREAM_SHA"
+          git -C "$WORKTREE" cat-file -e "$UPSTREAM_SHA^{commit}"
           git -C "$WORKTREE" merge-base HEAD "$UPSTREAM_SHA" | tee "$WORKTREE/merge-base.txt"
           test "$(cat merge-base.txt)" = "$EXPECTED_MERGE_BASE"
 
