@@ -173,20 +173,126 @@ jobs:
           p.write_text("\n".join(out) + "\n")
           PY
           cp feeds.conf.default "$GITHUB_WORKSPACE/feeds.conf.default.pinned"
-          ./scripts/feeds update pon_drivers pon_userspace 2>&1 | tee "$GITHUB_WORKSPACE/feed-update.log"
+
+          # Preserve complete updater/scanner output and its real exit status.
+          set +e
+          ./scripts/feeds update pon_drivers pon_userspace > "$GITHUB_WORKSPACE/feed-update.log" 2>&1
+          update_rc=$?
+          set -e
+          printf 'scripts_feeds_update_exit=%s\n' "$update_rc" > "$GITHUB_WORKSPACE/feed-git-status.txt"
+          test "$update_rc" -eq 0
+
+          git_ok=1
+          : > "$GITHUB_WORKSPACE/feed-remotes-heads.txt"
           for feed in pon_drivers pon_userspace; do
-            test -d "feeds/$feed/.git"
+            expected="$DRIVERS_SHA"
+            [ "$feed" = pon_userspace ] && expected="$USERSPACE_SHA"
             {
               echo "[$feed]"
-              git -C "feeds/$feed" remote -v
-              echo "HEAD=$(git -C "feeds/$feed" rev-parse HEAD)"
-              echo "EXPECTED=$( [ "$feed" = pon_drivers ] && echo "$DRIVERS_SHA" || echo "$USERSPACE_SHA" )"
+              if [ -d "feeds/$feed/.git" ]; then
+                git -C "feeds/$feed" remote -v
+                actual="$(git -C "feeds/$feed" rev-parse HEAD)"
+                echo "HEAD=$actual"
+                echo "EXPECTED=$expected"
+                [ "$actual" = "$expected" ] || git_ok=0
+              else
+                echo "GIT_CHECKOUT=MISSING"
+                git_ok=0
+              fi
             } >> "$GITHUB_WORKSPACE/feed-remotes-heads.txt"
           done
-          test "$(git -C feeds/pon_drivers rev-parse HEAD)" = "$DRIVERS_SHA"
-          test "$(git -C feeds/pon_userspace rev-parse HEAD)" = "$USERSPACE_SHA"
+          printf 'feed_git_checkout_and_fixed_head=%s\n' "$git_ok" >> "$GITHUB_WORKSPACE/feed-git-status.txt"
+          test "$git_ok" -eq 1
           sha256sum feeds.conf.default >> "$GITHUB_WORKSPACE/file-sha256.txt"
-          echo "PASS: both pinned PON feeds updated and HEADs match fixed SHAs" | tee "$GITHUB_WORKSPACE/feed-update-result.txt"
+          echo "PASS: Feed Git checkouts and fixed HEADs verified; metadata validation is a separate gate." | tee "$GITHUB_WORKSPACE/feed-git-result.txt"
+
+      - name: Validate each Feed package metadata index independently
+        if: always()
+        shell: bash
+        run: |
+          set -u
+          cd "$WORKTREE"
+          mkdir -p "$GITHUB_WORKSPACE/feed-metadata"
+          overall=0
+          for feed in pon_drivers pon_userspace; do
+            index="feeds/$feed.index"
+            report="$GITHUB_WORKSPACE/feed-metadata/$feed.txt"
+            listing="$GITHUB_WORKSPACE/feed-metadata/$feed-packages.txt"
+            {
+              echo "feed=$feed"
+              if [ -s "$index" ]; then
+                echo "index_file=present"
+                echo "index_bytes=$(wc -c < "$index")"
+              else
+                echo "index_file=MISSING_OR_EMPTY"
+                overall=1
+              fi
+
+              set +e
+              ./scripts/feeds list -r "$feed" > "$listing" 2> "$GITHUB_WORKSPACE/feed-metadata/$feed-list.stderr"
+              list_rc=$?
+              set -e
+              echo "metadata_list_exit=$list_rc"
+              if [ "$list_rc" -ne 0 ]; then
+                overall=1
+              fi
+
+              if ! awk 'NF && $1 !~ /^TARGET:/ { found=1 } END { exit !found }' "$listing"; then
+                echo "parsed_package_records=NONE"
+                overall=1
+              else
+                count="$(awk 'NF && $1 !~ /^TARGET:/ { n++ } END { print n+0 }' "$listing")"
+                echo "parsed_package_records=$count"
+              fi
+
+              if [ "$feed" = pon_userspace ]; then
+                for package_name in airoha-pon-daemons airoha-ponctl luci-app-iptv luci-app-pon; do
+                  if grep -Eq "^\${package_name}[[:space:]]" "$listing"; then
+                    echo "required_package_\${package_name}=present"
+                  else
+                    echo "required_package_\${package_name}=MISSING"
+                    overall=1
+                  fi
+                done
+              fi
+
+              if grep -Eq 'ERROR: please fix|Makefile.*(error|Error)|parse.*(failed|error)' "$GITHUB_WORKSPACE/feed-update.log"; then
+                echo "scanner_diagnostics=ERROR_FOUND_IN_UPDATE_LOG"
+                overall=1
+              else
+                echo "scanner_diagnostics=no_known_metadata_error_pattern"
+              fi
+            } > "$report"
+          done
+
+          if [ "$overall" -eq 0 ]; then result=PASS; else result=FAIL; fi
+          printf 'feed_metadata_index_validation=%s\n' "$result" | tee "$GITHUB_WORKSPACE/feed-metadata-result.txt"
+          cat "$GITHUB_WORKSPACE/feed-metadata/"pon_*.txt
+          exit "$overall"
+
+      - name: Collect Feed scanner diagnostics and dump files
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          mkdir -p "$GITHUB_WORKSPACE/feed-diagnostics"
+          if [ -d "$WORKTREE" ]; then
+            find "$WORKTREE" -type f -name dump.txt -print0 |
+              while IFS= read -r -d '' file; do
+                relative="\${file#"$WORKTREE"/}"
+                destination="$GITHUB_WORKSPACE/feed-diagnostics/$relative"
+                mkdir -p "$(dirname "$destination")"
+                cp "$file" "$destination"
+              done
+            find "$WORKTREE/feeds" -type f \( -name '*.log' -o -name '*.stderr' \) -print0 2>/dev/null |
+              while IFS= read -r -d '' file; do
+                relative="\${file#"$WORKTREE"/}"
+                destination="$GITHUB_WORKSPACE/feed-diagnostics/$relative"
+                mkdir -p "$(dirname "$destination")"
+                cp "$file" "$destination"
+              done
+          fi
+          find "$GITHUB_WORKSPACE/feed-diagnostics" -type f -print | sort > "$GITHUB_WORKSPACE/feed-diagnostics-file-list.txt"
 
       - name: Final acceptance and artifact manifest
         if: always()
@@ -202,7 +308,7 @@ jobs:
             echo "- Drivers Feed SHA: $DRIVERS_SHA"
             echo "- Userspace Feed SHA: $USERSPACE_SHA"
             echo
-            for f in merge-result-sha.txt path-counts.txt airoha-compatibility.txt path-integrity-result.txt feed-remotes-heads.txt feed-update-result.txt; do
+            for f in merge-result-sha.txt path-counts.txt airoha-compatibility.txt path-integrity-result.txt feed-remotes-heads.txt feed-git-result.txt feed-git-status.txt feed-metadata-result.txt; do
               if [ -f "$GITHUB_WORKSPACE/$f" ]; then
                 echo "## $f"
                 cat "$GITHUB_WORKSPACE/$f"
@@ -235,7 +341,12 @@ jobs:
             feeds.conf.default.pinned
             feed-update.log
             feed-remotes-heads.txt
-            feed-update-result.txt
+            feed-git-status.txt
+            feed-git-result.txt
+            feed-metadata/**
+            feed-metadata-result.txt
+            feed-diagnostics/**
+            feed-diagnostics-file-list.txt
             acceptance-report.md
           if-no-files-found: warn
           retention-days: 30
