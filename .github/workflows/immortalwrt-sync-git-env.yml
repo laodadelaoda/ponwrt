@@ -248,16 +248,16 @@ jobs:
               before=$(git rev-parse "$TARGET_SHA:$path")
               after=$(git rev-parse ":$path")
               if [ "$before" != "$after" ]; then
-                printf 'CONTENT_CHANGED\\t%s\\t%s\\t%s\\n' "$path" "$before" "$after" >> ponwrt-only-path-audit.tsv
+                printf 'CONTENT_CHANGED\t%s\t%s\t%s\n' "$path" "$before" "$after" >> ponwrt-only-path-audit.tsv
                 exit 1
               fi
-              printf 'IDENTICAL\\t%s\\t%s\\n' "$path" "$before" >> ponwrt-only-path-audit.tsv
+              printf 'IDENTICAL\t%s\t%s\n' "$path" "$before" >> ponwrt-only-path-audit.tsv
             else
               if git rev-parse --verify ":$path" 2>/dev/null; then
                 echo "RESURRECTED_AFTER_MERGE $path" >> ponwrt-only-path-audit.tsv
                 exit 1
               fi
-              printf 'DELETED_PRESERVED\\t%s\\n' "$path" >> ponwrt-only-path-audit.tsv
+              printf 'DELETED_PRESERVED\t%s\n' "$path" >> ponwrt-only-path-audit.tsv
             fi
           done < ponwrt-only-paths.txt
           test "$(wc -l < ponwrt-only-path-audit.tsv)" -eq "$(wc -l < ponwrt-only-paths.txt)"
