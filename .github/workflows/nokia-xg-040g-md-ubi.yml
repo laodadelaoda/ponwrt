@@ -12,6 +12,9 @@ on:
       - feeds.conf.default
       - package/boot/arm-trusted-firmware-airoha/**
       - package/boot/uboot-airoha/**
+      - package/kernel/**
+      - include/kernel*.mk
+      - scripts/feeds
       - target/linux/airoha/**
       - target/linux/generic/**
   workflow_dispatch:
@@ -247,7 +250,7 @@ jobs:
               exit 1
             fi
             install -m 0644 "${matches[0]}" "output/kmods/$(basename "${matches[0]}")"
-            sha256sum "output/kmods/$(basename "${matches[0]}")" >> output/kmods/SHA256SUMS
+            (cd output/kmods && sha256sum "$(basename "${matches[0]}")") >> output/kmods/SHA256SUMS
           done
 
           {
@@ -305,6 +308,7 @@ jobs:
             output/nokia_xg-040g-md-ubi-sysupgrade.itb \
             output/bl31-uboot.fip \
             output/preloader.bin > output/SHA256SUMS
+          (cd output && sha256sum kmods/*.apk) >> output/SHA256SUMS
 
           {
             echo "Repository: ${GITHUB_REPOSITORY}"
