@@ -6,7 +6,12 @@ on:
     branches:
       - epon1g-nokia-xg-040g-md
     paths:
+      - .github/workflows/nokia-xg-040g-md-ubi.yml
+      - configs/an7581.config
+      - configs/release.config
       - feeds.conf.default
+      - package/boot/arm-trusted-firmware-airoha/**
+      - package/boot/uboot-airoha/**
       - target/linux/airoha/**
       - target/linux/generic/**
   workflow_dispatch:
@@ -138,7 +143,43 @@ jobs:
           set -o pipefail
           make download -j"$(nproc)" 2>&1 | tee download.log
 
-      - name: Build firmware
+      - name: Build Nokia XG-040G-MD Bootloader packages
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          grep -qx 'CONFIG_PACKAGE_trusted-firmware-a-an7581-bl2=y' .config
+          grep -qx 'CONFIG_PACKAGE_trusted-firmware-a-an7581-bl31=y' .config
+          grep -qx 'CONFIG_PACKAGE_u-boot-an7581_nokia_xg-040g-md=y' .config
+
+          make package/boot/uboot-airoha/compile -j"$(nproc)" V=s 2>&1 | tee bootloader-build.log
+
+          find_staged_one() {
+            local name="$1"
+            local -a matches=()
+            mapfile -t matches < <(find staging_dir -type f -name "$name" -print)
+            if [ "${#matches[@]}" -ne 1 ] || [ ! -s "${matches[0]:-}" ]; then
+              printf 'Expected exactly one non-empty staged Bootloader input %s; found %s\n' "$name" "${#matches[@]}" >&2
+              printf '%s\n' "${matches[@]}" >&2
+              exit 1
+            fi
+            printf '%s\n' "${matches[0]}"
+          }
+
+          bl2="$(find_staged_one 'an7581-bl2.bin')"
+          bl31="$(find_staged_one 'an7581-bl31.lzma')"
+          uboot="$(find_staged_one 'an7581_nokia_xg-040g-md-u-boot.lzma')"
+          uboot_dtb="$(find_staged_one 'an7581_nokia_xg-040g-md-u-boot.dtb')"
+
+          {
+            printf 'BL2: %s\n' "$bl2"
+            printf 'BL31: %s\n' "$bl31"
+            printf 'U-Boot: %s\n' "$uboot"
+            printf 'U-Boot DTB: %s\n' "$uboot_dtb"
+            sha256sum "$bl2" "$bl31" "$uboot" "$uboot_dtb"
+          } | tee bootloader-inputs.txt
+
+      - name: Build firmware and device Bootloader images
         shell: bash
         run: |
           set -o pipefail
@@ -221,6 +262,8 @@ jobs:
             source-revisions.txt
             single-device-config-check.txt
             download.log
+            bootloader-build.log
+            bootloader-inputs.txt
             build.log
           if-no-files-found: ignore
           retention-days: 14
