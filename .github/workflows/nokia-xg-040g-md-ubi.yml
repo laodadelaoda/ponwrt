@@ -152,6 +152,7 @@ jobs:
           grep -qx 'CONFIG_PACKAGE_trusted-firmware-a-an7581-bl31=y' .config
           grep -qx 'CONFIG_PACKAGE_u-boot-an7581_nokia_xg-040g-md=y' .config
 
+          make package/boot/arm-trusted-firmware-airoha/compile -j"$(nproc)" V=s 2>&1 | tee atf-build.log
           make package/boot/uboot-airoha/compile -j"$(nproc)" V=s 2>&1 | tee bootloader-build.log
 
           find_staged_one() {
@@ -262,6 +263,7 @@ jobs:
             source-revisions.txt
             single-device-config-check.txt
             download.log
+            atf-build.log
             bootloader-build.log
             bootloader-inputs.txt
             build.log
