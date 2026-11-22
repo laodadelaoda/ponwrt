@@ -186,6 +186,80 @@ jobs:
           set -o pipefail
           make -j"$(nproc)" V=s 2>&1 | tee build.log
 
+      - name: Build required PonWrt kmods omitted from firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # These modules are supplied by the pinned PonWrt PON driver feed.
+          # They must never be substituted with ImmortalWrt prebuilt kmods.
+          required_kmods=(
+            kmod-airoha-en7572
+            kmod-airoha-paged-bosa
+            kmod-airoha-xpon
+          )
+
+          # Preserve the exact firmware build configuration. Select the required
+          # packages as modules only for this supplementary package build.
+          cp .config .config.firmware
+          restore_config() {
+            cp .config.firmware .config
+          }
+          trap restore_config EXIT
+
+          for package in "${required_kmods[@]}"; do
+            if ! grep -q "^CONFIG_PACKAGE_${package}=\(y\|m\)$" .config; then
+              printf 'CONFIG_PACKAGE_%s=m\n' "$package" >> .config
+            fi
+          done
+
+          make defconfig
+
+          for package in "${required_kmods[@]}"; do
+            if ! grep -qx "CONFIG_PACKAGE_${package}=m" .config; then
+              echo "Required supplementary kmod is not selected as a module: $package" >&2
+              grep -E "^CONFIG_PACKAGE_${package}=" .config || true
+              exit 1
+            fi
+          done
+
+          {
+            echo "PonWrt commit: ${GITHUB_SHA}"
+            echo "Kernel: $(grep '^CONFIG_LINUX_6_' .config | head -n1 || true)"
+            echo "Build mode: supplementary modules (not installed in firmware rootfs)"
+            printf 'Required packages: %s\n' "${required_kmods[*]}"
+            sha256sum .config
+          } | tee ponwrt-kmod-build-info.txt
+
+          # Build from the same source tree, pinned feeds, toolchain and kernel
+          # configuration used for the firmware. This also resolves package deps.
+          make package/compile -j"$(nproc)" V=s 2>&1 | tee ponwrt-kmod-build.log
+
+          mkdir -p output/kmods
+          : > output/kmods/SHA256SUMS
+          for package in "${required_kmods[@]}"; do
+            mapfile -t matches < <(find bin/packages -type f -name "${package}_*.apk" -print)
+            if [ "${#matches[@]}" -ne 1 ] || [ ! -s "${matches[0]:-}" ]; then
+              printf 'Expected exactly one non-empty PonWrt-built APK for %s; found %s\n' "$package" "${#matches[@]}" >&2
+              printf '%s\n' "${matches[@]}" >&2
+              exit 1
+            fi
+            install -m 0644 "${matches[0]}" "output/kmods/$(basename "${matches[0]}")"
+            sha256sum "output/kmods/$(basename "${matches[0]}")" >> output/kmods/SHA256SUMS
+          done
+
+          {
+            echo "Repository: ${GITHUB_REPOSITORY}"
+            echo "Commit: ${GITHUB_SHA}"
+            echo "Kernel release: $(make -s kernel_version)"
+            echo
+            echo "PonWrt-only supplementary kmods:"
+            cat output/kmods/SHA256SUMS
+          } > output/kmods/BUILD-INFO.txt
+
+          restore_config
+          trap - EXIT
+
       - name: Verify and stage firmware and Bootloader artifacts
         shell: bash
         run: |
@@ -243,6 +317,9 @@ jobs:
             echo
             echo 'Artifact SHA256:'
             cat output/SHA256SUMS
+            echo
+            echo 'Supplementary PonWrt kmods:'
+            cat output/kmods/SHA256SUMS
           } > output/BUILD-INFO.txt
 
       - name: Upload firmware
@@ -266,6 +343,8 @@ jobs:
             atf-build.log
             bootloader-build.log
             bootloader-inputs.txt
+            ponwrt-kmod-build-info.txt
+            ponwrt-kmod-build.log
             build.log
           if-no-files-found: ignore
           retention-days: 14
