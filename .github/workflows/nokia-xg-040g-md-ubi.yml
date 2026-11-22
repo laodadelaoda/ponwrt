@@ -212,7 +212,7 @@ jobs:
             # supplementary pass regardless of firmware profile defaults.
             sed -i -e "/^CONFIG_PACKAGE_${package}=/d" \
               -e "/^# CONFIG_PACKAGE_${package} is not set$/d" .config
-            printf 'CONFIG_PACKAGE_%s=m\\n' "$package" >> .config
+            printf 'CONFIG_PACKAGE_%s=m\n' "$package" >> .config
           done
 
           make defconfig
