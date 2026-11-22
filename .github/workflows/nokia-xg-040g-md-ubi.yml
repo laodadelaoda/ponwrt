@@ -6,7 +6,6 @@ on:
     branches:
       - epon1g-nokia-xg-040g-md
     paths:
-      - .github/workflows/nokia-xg-040g-md-ubi.yml
       - feeds.conf.default
       - target/linux/airoha/**
       - target/linux/generic/**
@@ -145,33 +144,63 @@ jobs:
           set -o pipefail
           make -j"$(nproc)" V=s 2>&1 | tee build.log
 
-      - name: Verify and stage the single sysupgrade image
+      - name: Verify and stage firmware and Bootloader artifacts
         shell: bash
         run: |
           set -euo pipefail
           image_dir='bin/targets/airoha/an7581'
           test -d "$image_dir"
 
-          mapfile -t images < <(find "$image_dir" -maxdepth 1 -type f -name '*sysupgrade.itb' -print)
-          if [ "${#images[@]}" -ne 1 ]; then
-            printf 'Expected exactly one sysupgrade.itb, found %s\n' "${#images[@]}" >&2
-            printf '%s\n' "${images[@]}" >&2
-            exit 1
-          fi
+          find_one() {
+            local pattern="$1" description="$2"
+            local -a matches=()
+            mapfile -t matches < <(find "$image_dir" -maxdepth 1 -type f -name "$pattern" -print)
+            if [ "\${#matches[@]}" -ne 1 ]; then
+              printf 'Expected exactly one %s (%s), found %s\n' "$description" "$pattern" "\${#matches[@]}" >&2
+              printf '%s\n' "\${matches[@]}" >&2
+              exit 1
+            fi
+            if [ ! -s "\${matches[0]}" ]; then
+              printf '%s is missing or empty: %s\n' "$description" "\${matches[0]}" >&2
+              exit 1
+            fi
+            printf '%s\n' "\${matches[0]}"
+          }
+
+          sysupgrade="$(find_one '*sysupgrade.itb' 'sysupgrade image')"
+          fip="$(find_one 'bl31-uboot.fip' 'BL31/U-Boot FIP')"
+          preloader="$(find_one 'preloader.bin' 'Preloader')"
 
           mkdir -p output
-          install -m 0644 "${images[0]}" output/nokia_xg-040g-md-ubi-sysupgrade.itb
-          sha256sum output/nokia_xg-040g-md-ubi-sysupgrade.itb > output/SHA256SUMS
+          install -m 0644 "$sysupgrade" output/nokia_xg-040g-md-ubi-sysupgrade.itb
+          install -m 0644 "$fip" output/bl31-uboot.fip
+          install -m 0644 "$preloader" output/preloader.bin
+
+          for artifact in \
+            output/nokia_xg-040g-md-ubi-sysupgrade.itb \
+            output/bl31-uboot.fip \
+            output/preloader.bin; do
+            test -s "$artifact"
+          done
+
+          sha256sum \
+            output/nokia_xg-040g-md-ubi-sysupgrade.itb \
+            output/bl31-uboot.fip \
+            output/preloader.bin > output/SHA256SUMS
 
           {
-            echo "Repository: ${GITHUB_REPOSITORY}"
-            echo "Commit: ${GITHUB_SHA}"
+            echo "Repository: \${GITHUB_REPOSITORY}"
+            echo "Commit: \${GITHUB_SHA}"
             echo 'Target: airoha/an7581'
             echo 'Device: nokia_xg-040g-md-ubi'
             echo 'DTS: an7581-nokia_xg-040g-md-ubi'
-            echo "Source image: ${images[0]}"
-            echo 'Artifact: nokia_xg-040g-md-ubi-sysupgrade.itb'
             echo "Built at (UTC): $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo
+            echo 'Source revisions:'
+            cat source-revisions.txt
+            echo
+            echo 'Artifact SHA256:'
+            cat output/SHA256SUMS
           } > output/BUILD-INFO.txt
 
       - name: Upload firmware
@@ -189,7 +218,6 @@ jobs:
         with:
           name: ponwrt-nokia-xg-040g-md-ubi-build-diagnostics
           path: |
-            source-revisions.txt
             source-revisions.txt
             single-device-config-check.txt
             download.log
