@@ -229,7 +229,7 @@ jobs:
               m) standalone_kmods+=("$package") ;;
               y) firmware_kmods+=("$package") ;;
               *)
-                printf 'Required PonWrt kmod %s has unsupported selection: %s\\n' "$package" "${setting:-unset}" >&2
+                printf 'Required PonWrt kmod %s has unsupported selection: %s\n' "$package" "${setting:-unset}" >&2
                 exit 1
                 ;;
             esac
@@ -240,10 +240,10 @@ jobs:
             echo "Original firmware config SHA256: ${firmware_config_sha}"
             echo 'Original package selections (unchanged):'
             for package in "${firmware_kmods[@]}"; do
-              printf '  firmware-integrated: %s\\n' "$package"
+              printf '  firmware-integrated: %s\n' "$package"
             done
             for package in "${standalone_kmods[@]}"; do
-              printf '  standalone APK: %s\\n' "$package"
+              printf '  standalone APK: %s\n' "$package"
             done
           } | tee ponwrt-kmod-build-info.txt
 
@@ -259,7 +259,7 @@ jobs:
                   target='package/feeds/pon_drivers/airoha-xpon/compile'
                   ;;
                 *)
-                  printf 'No audited PonWrt feed build target for %s\\n' "$package" >&2
+                  printf 'No audited PonWrt feed build target for %s\n' "$package" >&2
                   exit 1
                   ;;
               esac
@@ -281,8 +281,8 @@ jobs:
             for package in "${standalone_kmods[@]}"; do
               mapfile -t matches < <(find bin/packages -type f -name "${package}_*.apk" -print)
               if [ "${#matches[@]}" -ne 1 ] || [ ! -s "${matches[0]:-}" ]; then
-                printf 'Expected exactly one non-empty PonWrt-built APK for %s; found %s\\n' "$package" "${#matches[@]}" >&2
-                printf '%s\\n' "${matches[@]}" >&2
+                printf 'Expected exactly one non-empty PonWrt-built APK for %s; found %s\n' "$package" "${#matches[@]}" >&2
+                printf '%s\n' "${matches[@]}" >&2
                 exit 1
               fi
               install -m 0644 "${matches[0]}" "output/kmods/$(basename "${matches[0]}")"
@@ -296,7 +296,7 @@ jobs:
             echo "Repository: ${GITHUB_REPOSITORY}"
             echo "Commit: ${GITHUB_SHA}"
             echo 'Firmware-integrated PonWrt kmods:'
-            printf '%s\\n' "${firmware_kmods[@]}"
+            printf '%s\n' "${firmware_kmods[@]}"
             echo
             echo 'Standalone PonWrt kmod APKs:'
             cat output/kmods/SHA256SUMS
