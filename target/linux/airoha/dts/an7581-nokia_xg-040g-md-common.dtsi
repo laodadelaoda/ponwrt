@@ -94,13 +94,6 @@
 		regulator-name = "usb-5v";
 	};
 
-	/*
-	 * Controls both USB ports at once
-	 */
-	usb-power {
-		compatible = "regulator-output";
-		vout-supply = <&reg_usb_5v>;
-	};
 };
 
 &en7581_pinctrl {
