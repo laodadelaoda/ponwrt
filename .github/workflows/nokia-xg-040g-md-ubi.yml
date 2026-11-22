@@ -223,6 +223,7 @@ jobs:
             kmod-airoha-xpon
           )
 
+          firmware_config_sha="$(sha256sum .config | awk '{print $1}')"
           standalone_kmods=()
           firmware_kmods=()
           for package in "${required_kmods[@]}"; do
@@ -231,7 +232,7 @@ jobs:
               m) standalone_kmods+=("$package") ;;
               y) firmware_kmods+=("$package") ;;
               *)
-                printf 'Required PonWrt kmod %s has unsupported selection: %s\\n' "$package" "${setting:-unset}" >&2
+                printf 'Required PonWrt kmod %s has unsupported selection: %s\n' "$package" "${setting:-unset}" >&2
                 exit 1
                 ;;
             esac
@@ -242,10 +243,10 @@ jobs:
             echo "Original firmware config SHA256: $(sha256sum .config | awk '{print $1}')"
             echo 'Original package selections (unchanged):'
             for package in "${firmware_kmods[@]}"; do
-              printf '  firmware-integrated: %s\\n' "$package"
+              printf '  firmware-integrated: %s\n' "$package"
             done
             for package in "${standalone_kmods[@]}"; do
-              printf '  standalone APK: %s\\n' "$package"
+              printf '  standalone APK: %s\n' "$package"
             done
           } | tee ponwrt-kmod-build-info.txt
 
@@ -264,22 +265,21 @@ jobs:
                   target='package/feeds/pon_drivers/airoha-xpon/compile'
                   ;;
                 *)
-                  printf 'No audited PonWrt feed build target for %s\\n' "$package" >&2
+                  printf 'No audited PonWrt feed build target for %s\n' "$package" >&2
                   exit 1
                   ;;
               esac
               package_targets["$target"]=1
             done
 
-            for target in "${!package_targets[@]}"; do
-              make "$target" -j"$(nproc)" V=s
-            done
+            test -f package/feeds/pon_drivers/airoha-pon-frontends/Makefile
+            grep -q '^define KernelPackage/airoha-paged-bosa
 
             for package in "${standalone_kmods[@]}"; do
               mapfile -t matches < <(find bin/packages -type f -name "${package}_*.apk" -print)
               if [ "${#matches[@]}" -ne 1 ] || [ ! -s "${matches[0]:-}" ]; then
-                printf 'Expected exactly one non-empty PonWrt-built APK for %s; found %s\\n' "$package" "${#matches[@]}" >&2
-                printf '%s\\n' "${matches[@]}" >&2
+                printf 'Expected exactly one non-empty PonWrt-built APK for %s; found %s\n' "$package" "${#matches[@]}" >&2
+                printf '%s\n' "${matches[@]}" >&2
                 exit 1
               fi
               install -m 0644 "${matches[0]}" "output/kmods/$(basename "${matches[0]}")"
@@ -294,7 +294,7 @@ jobs:
             echo "Repository: ${GITHUB_REPOSITORY}"
             echo "Commit: ${GITHUB_SHA}"
             echo 'Firmware-integrated PonWrt kmods:'
-            printf '%s\\n' "${firmware_kmods[@]}"
+            printf '%s\n' "${firmware_kmods[@]}"
             echo
             echo 'Standalone PonWrt kmod APKs:'
             cat output/kmods/SHA256SUMS
@@ -312,27 +312,27 @@ jobs:
             local -a matches=()
             mapfile -t matches < <(find "$image_dir" -maxdepth 1 -type f -name "$pattern" -print)
             if [ "${#matches[@]}" -ne 1 ]; then
-              printf 'Expected exactly one %s (%s), found %s\\n' "$description" "$pattern" "${#matches[@]}" >&2
-              printf '%s\\n' "${matches[@]}" >&2
+              printf 'Expected exactly one %s (%s), found %s\n' "$description" "$pattern" "${#matches[@]}" >&2
+              printf '%s\n' "${matches[@]}" >&2
               exit 1
             fi
             if [ ! -s "${matches[0]}" ]; then
-              printf '%s is missing or empty: %s\\n' "$description" "${matches[0]}" >&2
+              printf '%s is missing or empty: %s\n' "$description" "${matches[0]}" >&2
               exit 1
             fi
-            printf '%s\\n' "${matches[0]}"
+            printf '%s\n' "${matches[0]}"
           }
 
           sysupgrade="$(find_one '*sysupgrade.itb' 'sysupgrade image')"
           # ARTIFACT outputs are prefixed by DEVICE_IMG_PREFIX in OpenWrt.
-          preloader="$(find_one '*_preloader.bin' 'Nokia Preloader artifact')"
-          fip="$(find_one '*_bl31-uboot.fip' 'Nokia BL31/U-Boot FIP artifact')"
+          preloader="$(find_one '*-preloader.bin' 'Nokia Preloader artifact')"
+          fip="$(find_one '*-bl31-uboot.fip' 'Nokia BL31/U-Boot FIP artifact')"
 
           # The Nokia U-Boot variant must retain the Airoha hardware RNG driver.
           mapfile -t uboot_configs < <(find build_dir -type f -path '*/u-boot-*/.config' -print)
           if [ "${#uboot_configs[@]}" -ne 1 ]; then
-            printf 'Expected exactly one configured U-Boot build tree, found %s\\n' "${#uboot_configs[@]}" >&2
-            printf '%s\\n' "${uboot_configs[@]}" >&2
+            printf 'Expected exactly one configured U-Boot build tree, found %s\n' "${#uboot_configs[@]}" >&2
+            printf '%s\n' "${uboot_configs[@]}" >&2
             exit 1
           fi
           grep -qx 'CONFIG_DM_RNG=y' "${uboot_configs[0]}"
@@ -374,7 +374,150 @@ jobs:
             cat ponwrt-en7572-firmware-integration.txt
             echo
             echo 'U-Boot RNG build configuration:'
-            printf 'U-Boot config: %s\\n' "${uboot_configs[0]}"
+            printf 'U-Boot config: %s\n' "${uboot_configs[0]}"
+            grep -E '^CONFIG_(DM_RNG|RNG_AIROHA)=y$' "${uboot_configs[0]}"
+            echo 'Note: this proves the hardware RNG driver is enabled in the built U-Boot configuration; actual entropy/seed delivery requires device-side runtime verification.'
+            echo
+            echo 'Supplementary PonWrt kmods:'
+            cat output/kmods/SHA256SUMS
+          } > output/BUILD-INFO.txt
+
+      - name: Upload firmware
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ponwrt-nokia-xg-040g-md-ubi-sysupgrade
+          path: output/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ponwrt-nokia-xg-040g-md-ubi-build-diagnostics
+          path: |
+            source-revisions.txt
+            single-device-config-check.txt
+            download.log
+            ponwrt-kmod-build-info.txt
+            output/kmods/BUILD-INFO.txt
+            output/kmods/SHA256SUMS
+            output/BUILD-INFO.txt
+            ponwrt-en7572-firmware-integration.txt
+            ponwrt-kmod-build.log
+            build.log
+          if-no-files-found: ignore
+          retention-days: 14
+ package/feeds/pon_drivers/airoha-pon-frontends/Makefile
+            for target in "${!package_targets[@]}"; do
+              make "$target" -j"$(nproc)" V=s 2>&1 | tee -a ponwrt-kmod-build.log
+            done
+            test "$(sha256sum .config | awk '{print $1}')" = "$firmware_config_sha" || {
+              echo 'Supplementary kmod build changed the original firmware .config' >&2
+              exit 1
+            }
+
+            for package in "${standalone_kmods[@]}"; do
+              mapfile -t matches < <(find bin/packages -type f -name "${package}_*.apk" -print)
+              if [ "${#matches[@]}" -ne 1 ] || [ ! -s "${matches[0]:-}" ]; then
+                printf 'Expected exactly one non-empty PonWrt-built APK for %s; found %s\n' "$package" "${#matches[@]}" >&2
+                printf '%s\n' "${matches[@]}" >&2
+                exit 1
+              fi
+              install -m 0644 "${matches[0]}" "output/kmods/$(basename "${matches[0]}")"
+            done
+          else
+            echo 'No required standalone PonWrt kmods; all required Airoha PON kmods are firmware-integrated.'
+          fi
+
+          (cd output/kmods && find . -maxdepth 1 -type f -name '*.apk' -print0 | sort -z | xargs -0 -r sha256sum) > output/kmods/SHA256SUMS
+
+          {
+            echo "Repository: ${GITHUB_REPOSITORY}"
+            echo "Commit: ${GITHUB_SHA}"
+            echo 'Firmware-integrated PonWrt kmods:'
+            printf '%s\n' "${firmware_kmods[@]}"
+            echo
+            echo 'Standalone PonWrt kmod APKs:'
+            cat output/kmods/SHA256SUMS
+          } > output/kmods/BUILD-INFO.txt
+
+      - name: Verify and stage firmware and Bootloader artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_dir='bin/targets/airoha/an7581'
+          test -d "$image_dir"
+
+          find_one() {
+            local pattern="$1" description="$2"
+            local -a matches=()
+            mapfile -t matches < <(find "$image_dir" -maxdepth 1 -type f -name "$pattern" -print)
+            if [ "${#matches[@]}" -ne 1 ]; then
+              printf 'Expected exactly one %s (%s), found %s\n' "$description" "$pattern" "${#matches[@]}" >&2
+              printf '%s\n' "${matches[@]}" >&2
+              exit 1
+            fi
+            if [ ! -s "${matches[0]}" ]; then
+              printf '%s is missing or empty: %s\n' "$description" "${matches[0]}" >&2
+              exit 1
+            fi
+            printf '%s\n' "${matches[0]}"
+          }
+
+          sysupgrade="$(find_one '*sysupgrade.itb' 'sysupgrade image')"
+          # ARTIFACT outputs are prefixed by DEVICE_IMG_PREFIX in OpenWrt.
+          preloader="$(find_one '*-preloader.bin' 'Nokia Preloader artifact')"
+          fip="$(find_one '*-bl31-uboot.fip' 'Nokia BL31/U-Boot FIP artifact')"
+
+          # The Nokia U-Boot variant must retain the Airoha hardware RNG driver.
+          mapfile -t uboot_configs < <(find build_dir -type f -path '*/u-boot-*/.config' -print)
+          if [ "${#uboot_configs[@]}" -ne 1 ]; then
+            printf 'Expected exactly one configured U-Boot build tree, found %s\n' "${#uboot_configs[@]}" >&2
+            printf '%s\n' "${uboot_configs[@]}" >&2
+            exit 1
+          fi
+          grep -qx 'CONFIG_DM_RNG=y' "${uboot_configs[0]}"
+          grep -qx 'CONFIG_RNG_AIROHA=y' "${uboot_configs[0]}"
+
+          mkdir -p output
+          install -m 0644 "$sysupgrade" output/nokia_xg-040g-md-ubi-sysupgrade.itb
+          install -m 0644 "$fip" output/bl31-uboot.fip
+          install -m 0644 "$preloader" output/preloader.bin
+
+          for artifact in \
+            output/nokia_xg-040g-md-ubi-sysupgrade.itb \
+            output/bl31-uboot.fip \
+            output/preloader.bin; do
+            test -s "$artifact"
+          done
+
+          sha256sum \
+            output/nokia_xg-040g-md-ubi-sysupgrade.itb \
+            output/bl31-uboot.fip \
+            output/preloader.bin > output/SHA256SUMS
+          find output/kmods -maxdepth 1 -type f -name '*.apk' -print0 | sort -z | xargs -0 -r sha256sum >> output/SHA256SUMS
+
+          {
+            echo "Repository: ${GITHUB_REPOSITORY}"
+            echo "Commit: ${GITHUB_SHA}"
+            echo 'Target: airoha/an7581'
+            echo 'Device: nokia_xg-040g-md-ubi'
+            echo 'DTS: an7581-nokia_xg-040g-md-ubi'
+            echo "Built at (UTC): $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo
+            echo 'Source revisions:'
+            cat source-revisions.txt
+            echo
+            echo 'Artifact SHA256:'
+            cat output/SHA256SUMS
+            echo
+            echo 'EN7572 firmware integration verification:'
+            cat ponwrt-en7572-firmware-integration.txt
+            echo
+            echo 'U-Boot RNG build configuration:'
+            printf 'U-Boot config: %s\n' "${uboot_configs[0]}"
             grep -E '^CONFIG_(DM_RNG|RNG_AIROHA)=y$' "${uboot_configs[0]}"
             echo 'Note: this proves the hardware RNG driver is enabled in the built U-Boot configuration; actual entropy/seed delivery requires device-side runtime verification.'
             echo
