@@ -251,7 +251,7 @@ jobs:
           {
             echo "Repository: ${GITHUB_REPOSITORY}"
             echo "Commit: ${GITHUB_SHA}"
-            echo "Kernel release: $(make -s kernel_version)"
+            echo "Kernel config: $(grep '^CONFIG_LINUX_6_' .config.firmware | head -n1 || true)"
             echo
             echo "PonWrt-only supplementary kmods:"
             cat output/kmods/SHA256SUMS
