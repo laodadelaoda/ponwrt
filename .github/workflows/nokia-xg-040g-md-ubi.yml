@@ -208,9 +208,11 @@ jobs:
           trap restore_config EXIT
 
           for package in "${required_kmods[@]}"; do
-            if ! grep -q "^CONFIG_PACKAGE_${package}=\(y\|m\)$" .config; then
-              printf 'CONFIG_PACKAGE_%s=m\n' "$package" >> .config
-            fi
+            # Force module packaging, never rootfs selection, in this
+            # supplementary pass regardless of firmware profile defaults.
+            sed -i -e "/^CONFIG_PACKAGE_${package}=/d" \
+              -e "/^# CONFIG_PACKAGE_${package} is not set$/d" .config
+            printf 'CONFIG_PACKAGE_%s=m\\n' "$package" >> .config
           done
 
           make defconfig
@@ -225,7 +227,7 @@ jobs:
 
           {
             echo "PonWrt commit: ${GITHUB_SHA}"
-            echo "Kernel: $(grep '^CONFIG_LINUX_6_' .config | head -n1 || true)"
+            echo "Kernel: $(grep '^CONFIG_LINUX_6_' .config.firmware | head -n1 || true)"
             echo "Build mode: supplementary modules (not installed in firmware rootfs)"
             printf 'Required packages: %s\n' "${required_kmods[*]}"
             sha256sum .config
