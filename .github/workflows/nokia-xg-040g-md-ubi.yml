@@ -264,8 +264,21 @@ jobs:
             printf '%s\n' "${uboot_configs[@]}" >&2
             exit 1
           fi
+          uboot_dir="${uboot_configs[0]%/.config}"
           grep -qx 'CONFIG_DM_RNG=y' "${uboot_configs[0]}"
           grep -qx 'CONFIG_RNG_AIROHA=y' "${uboot_configs[0]}"
+          ! grep -qx 'CONFIG_ARMV8_SEC_FIRMWARE_SUPPORT=y' "${uboot_configs[0]}"
+          ! grep -qx 'CONFIG_MEASURED_BOOT=y' "${uboot_configs[0]}"
+          test -s "$uboot_dir/drivers/rng/airoha-rng.o"
+          grep -q 'fdt_kaslrseed(fdt, false)' "$uboot_dir/boot/fdt_support.c"
+          grep -q 'compatible = "airoha,en7581-trng"' "$uboot_dir/dts/upstream/src/arm64/airoha/en7581.dtsi"
+          mapfile -t kernel_configs < <(find build_dir -type f -path '*/linux-6.18.*/.config' -print)
+          if [ "${#kernel_configs[@]}" -ne 1 ]; then
+            printf 'Expected exactly one Linux 6.18 kernel config; found %s\\n' "${#kernel_configs[@]}" >&2
+            printf '%s\\n' "${kernel_configs[@]}" >&2
+            exit 1
+          fi
+          grep -qx 'CONFIG_RANDOMIZE_BASE=y' "${kernel_configs[0]}"
           mkdir -p output
           install -m 0644 "$sysupgrade" output/nokia_xg-040g-md-ubi-sysupgrade.itb
           install -m 0644 "$fip" output/bl31-uboot.fip
@@ -284,9 +297,43 @@ jobs:
             cat output/SHA256SUMS
             echo 'EN7572 firmware integration:'
             cat ponwrt-en7572-firmware-integration.txt
-            echo 'U-Boot RNG configuration:'
-            grep -E '^CONFIG_(DM_RNG|RNG_AIROHA)=y$' "${uboot_configs[0]}"
-            echo 'RNG note: build-time configuration proves the Airoha RNG driver is enabled; actual entropy/seed delivery must be verified on the device.'
+            echo 'U-Boot Airoha TRNG / KASLR seed path: PASS'
+            grep -E '^CONFIG_(DM_RNG|RNG_AIROHA)=y
+            echo 'Standalone PonWrt kmod APKs:'
+            cat output/kmods/SHA256SUMS
+          } > output/BUILD-INFO.txt
+
+      - name: Upload firmware
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ponwrt-nokia-xg-040g-md-ubi-sysupgrade
+          path: output/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ponwrt-nokia-xg-040g-md-ubi-build-diagnostics
+          path: |
+            source-revisions.txt
+            single-device-config-check.txt
+            download.log
+            ponwrt-en7572-firmware-integration.txt
+            ponwrt-kmod-build-info.txt
+            output/kmods/BUILD-INFO.txt
+            output/kmods/SHA256SUMS
+            output/BUILD-INFO.txt
+            build.log
+          if-no-files-found: ignore
+          retention-days: 14
+ "${uboot_configs[0]}"
+            echo "U-Boot source: ${uboot_dir}"
+            echo "Linux kernel config: ${kernel_configs[0]}"
+            grep -qx 'CONFIG_RANDOMIZE_BASE=y' "${kernel_configs[0]}"
+            echo 'U-Boot v2026.07 fdt_chosen() is configured to populate /chosen/kaslr-seed through the Airoha TRNG; live hardware entropy remains a device-side check.'
             echo 'Standalone PonWrt kmod APKs:'
             cat output/kmods/SHA256SUMS
           } > output/BUILD-INFO.txt
