@@ -199,35 +199,44 @@ jobs:
           grep -qx 'CONFIG_PACKAGE_kmod-airoha-pon-frontend=y' .config
 
           image_dir='bin/targets/airoha/an7581'
-          mapfile -t manifests < <(find "$image_dir" -type f -name '*.manifest' -print | sort)
-          if [ "${#manifests[@]}" -eq 0 ]; then
+          find "$image_dir" -type f -name '*.manifest' -print > en7572-manifests.txt
+          test -s en7572-manifests.txt || {
             echo 'No final image package manifest found; cannot verify EN7572 integration' >&2
             exit 1
-          fi
+          }
 
-          manifest_matches=()
-          for manifest in "${manifests[@]}"; do
+          : > en7572-manifest-matches.txt
+          while IFS= read -r manifest; do
             if grep -Eq '^kmod-airoha-en7572([[:space:]]|$)' "$manifest" &&
               grep -Eq '^kmod-airoha-pon-frontend([[:space:]]|$)' "$manifest"; then
-              manifest_matches+=("$manifest")
+              printf '%s\n' "$manifest" >> en7572-manifest-matches.txt
             fi
-          done
-          if [ "${#manifest_matches[@]}" -eq 0 ]; then
+          done < en7572-manifests.txt
+          test -s en7572-manifest-matches.txt || {
             echo 'Final image manifest lacks EN7572 or its frontend-core dependency' >&2
-            printf 'Inspected manifests:\n%s\n' "${manifests[@]}" >&2
+            cat en7572-manifests.txt >&2
             exit 1
-          fi
+          }
 
           find_rootfs_file() {
-            local relative_path="$1" description="$2"
-            local -a matches=()
-            mapfile -t matches < <(find build_dir -type f -path "*/root-*/${relative_path}" -print)
-            if [ "${#matches[@]}" -ne 1 ] || [ ! -s "${matches[0]:-}" ]; then
-              printf 'Expected exactly one non-empty staged %s; found %s\n' "$description" "${#matches[@]}" >&2
-              printf '%s\n' "${matches[@]}" >&2
+            relative_path="$1"
+            description="$2"
+            result_file="$(mktemp)"
+            find build_dir -type f -path "*/root-*/$relative_path" -print > "$result_file"
+            count="$(wc -l < "$result_file")"
+            if [ "$count" -ne 1 ]; then
+              printf 'Expected exactly one staged %s; found %s\n' "$description" "$count" >&2
+              cat "$result_file" >&2
+              rm -f "$result_file"
               exit 1
             fi
-            printf '%s\n' "${matches[0]}"
+            result="$(cat "$result_file")"
+            rm -f "$result_file"
+            test -s "$result" || {
+              printf 'Staged %s is empty: %s\n' "$description" "$result" >&2
+              exit 1
+            }
+            printf '%s\n' "$result"
           }
 
           en7572_ko="$(find_rootfs_file 'lib/modules/*/airoha-en7572.ko' 'EN7572 kernel module')"
@@ -461,7 +470,7 @@ jobs:
  .config
             echo
             echo 'Final image manifests containing EN7572 and frontend core:'
-            printf '%s\n' "${manifest_matches[@]}"
+            cat en7572-manifest-matches.txt
             echo
             echo 'Staged root filesystem files and SHA256:'
             sha256sum "$en7572_ko" "$frontend_ko" "$firmware_pm" "$firmware_dm"
