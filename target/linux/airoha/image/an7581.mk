@@ -350,6 +350,9 @@ define Device/nokia_xg-040g-md-common
     kmod-usb-ledtrig-usbport kmod-usb3 kmod-airoha-en7572 \
     kmod-airoha-xpon airoha-ponctl airoha-pond \
     $(AIROHA_USB_STORAGE_PACKAGES)
+  ARTIFACT/preloader.bin := an7581-preloader nokia_xg-040g-md
+  ARTIFACT/bl31-uboot.fip := an7581-bl31-uboot nokia_xg-040g-md
+  ARTIFACTS := preloader.bin bl31-uboot.fip
 endef
 
 define Device/nokia_xg-040g-tf-common
