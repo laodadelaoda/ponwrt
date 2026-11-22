@@ -231,7 +231,7 @@ jobs:
           {
             echo "PonWrt commit: ${GITHUB_SHA}"
             echo "Kernel: $(grep '^CONFIG_LINUX_6_' .config.firmware | head -n1 || true)"
-            echo "Build mode: supplementary modules (not installed in firmware rootfs)"
+            echo "Build mode: standalone kmod package pass; original firmware rootfs configuration preserved"
             printf 'Required packages: %s\n' "${required_kmods[*]}"
             sha256sum .config
           } | tee ponwrt-kmod-build-info.txt
@@ -277,7 +277,7 @@ jobs:
             echo "Commit: ${GITHUB_SHA}"
             echo "Kernel config: $(grep '^CONFIG_LINUX_6_' .config.firmware | head -n1 || true)"
             echo
-            echo "PonWrt-only supplementary kmods:"
+            echo "PonWrt-built kmod packages (including dependency kmods):"
             cat output/kmods/SHA256SUMS
           } > output/kmods/BUILD-INFO.txt
 
