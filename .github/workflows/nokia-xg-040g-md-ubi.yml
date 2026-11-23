@@ -215,7 +215,7 @@ jobs:
           {
             echo "PonWrt commit: ${GITHUB_SHA}"
             echo "Firmware .config SHA256: $(sha256sum .config | awk '{print $1}')"
-            echo "Kernel patch version: $(sed -n 's/^CONFIG_LINUX_\([0-9][0-9.]*\)=y$/\1/p' .config | head -n1)"
+            echo "Kernel config selector: $(grep -E '^CONFIG_LINUX_[0-9_]+=y$' .config | head -n1)"
             echo "Standalone kmod count: ${#standalone_kmods[@]}"
             echo "Firmware-integrated kmod count: ${#firmware_kmods[@]}"
             echo
