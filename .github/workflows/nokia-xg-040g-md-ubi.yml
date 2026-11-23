@@ -258,9 +258,11 @@ jobs:
           sysupgrade="$(find_one '*sysupgrade.itb' 'sysupgrade image')"
           preloader="$(find_one '*-preloader.bin' 'Preloader artifact')"
           fip="$(find_one '*-bl31-uboot.fip' 'BL31/U-Boot FIP artifact')"
-          mapfile -t uboot_configs < <(find build_dir -type f -path '*/u-boot-*/.config' -print)
+          # Inspect only the device-specific U-Boot package build tree.
+          # Host tools and generic U-Boot builds are not the firmware bootloader.
+          mapfile -t uboot_configs < <(find build_dir/target-* -type f -path '*/u-boot-an7581_nokia_xg-040g-md/u-boot-*/.config' -print 2>/dev/null)
           if [ "${#uboot_configs[@]}" -ne 1 ]; then
-            printf 'Expected exactly one configured U-Boot tree; found %s\n' "${#uboot_configs[@]}" >&2
+            printf 'Expected exactly one Nokia XG-040G-MD U-Boot config; found %s\n' "${#uboot_configs[@]}" >&2
             printf '%s\n' "${uboot_configs[@]}" >&2
             exit 1
           fi
