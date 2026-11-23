@@ -274,7 +274,7 @@ jobs:
           test -s "$uboot_dir/drivers/rng/airoha-rng.o"
           grep -q 'fdt_kaslrseed(fdt, false)' "$uboot_dir/boot/fdt_support.c"
           grep -q 'compatible = "airoha,en7581-trng"' "$uboot_dir/dts/upstream/src/arm64/airoha/en7581.dtsi"
-          mapfile -t kernel_configs < <(find build_dir -type f -path '*/linux-6.18.*/.config' -print)
+          mapfile -t kernel_configs < <(find build_dir/target-* -type f -path '*/linux-airoha_an7581/linux-6.18.*/.config' -print)
           if [ "${#kernel_configs[@]}" -ne 1 ]; then
             printf 'Expected exactly one Linux 6.18 kernel config; found %s\n' "${#kernel_configs[@]}" >&2
             printf '%s\n' "${kernel_configs[@]}" >&2
