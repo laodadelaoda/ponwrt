@@ -230,7 +230,10 @@ jobs:
           : > output/kmods/SHA256SUMS
           missing=0
           for package in "${standalone_kmods[@]}"; do
-            mapfile -t matches < <(find "$package_dir" -maxdepth 1 -type f -name "${package}-*.apk" -print | sort)
+            # APK filenames are <exact-package-name>-<numeric-version>-<release>.apk.
+            # Require a digit immediately after the package name so similarly
+            # prefixed packages (e.g. usb-storage-uas) cannot be mistaken for it.
+            mapfile -t matches < <(find "$package_dir" -maxdepth 1 -type f -name "${package}-[0-9]*.apk" -print | sort)
             if [ "${#matches[@]}" -ne 1 ] || [ ! -s "${matches[0]:-}" ]; then
               printf 'Expected exactly one non-empty native PonWrt APK for %s; found %s\n' "$package" "${#matches[@]}" >&2
               printf '%s\n' "${matches[@]}" >&2
