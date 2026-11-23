@@ -193,52 +193,74 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          required_kmods=(kmod-airoha-en7572 kmod-airoha-paged-bosa kmod-airoha-xpon)
-          standalone_kmods=()
-          firmware_kmods=()
-          for package in "${required_kmods[@]}"; do
-            line="$(grep -E "^CONFIG_PACKAGE_${package}=(m|y)$" .config || true)"
-            setting="${line##*=}"
-            case "$setting" in
-              m) standalone_kmods+=("$package") ;;
-              y) firmware_kmods+=("$package") ;;
-              *) printf 'Required PonWrt kmod %s has unsupported selection: %s\n' "$package" "${setting:-unset}" >&2; exit 1 ;;
-            esac
-          done
+          package_dir='bin/targets/airoha/an7581/packages'
+          mkdir -p output/kmods
+
+          # Every kmod selected as =m is intentionally excluded from the
+          # firmware rootfs and must be distributed from this exact PonWrt
+          # build. Packages selected as =y are already integrated and must
+          # not be duplicated in the standalone bundle.
+          mapfile -t standalone_kmods < <(
+            sed -nE 's/^CONFIG_PACKAGE_(kmod-[A-Za-z0-9+_.+-]+)=m$/\1/p' .config | sort -u
+          )
+          mapfile -t firmware_kmods < <(
+            sed -nE 's/^CONFIG_PACKAGE_(kmod-[A-Za-z0-9+_.+-]+)=y$/\1/p' .config | sort -u
+          )
+
+          if [ ! -d "$package_dir" ]; then
+            echo "Missing native PonWrt package directory: $package_dir" >&2
+            exit 1
+          fi
+
           {
             echo "PonWrt commit: ${GITHUB_SHA}"
             echo "Firmware .config SHA256: $(sha256sum .config | awk '{print $1}')"
-            echo 'Firmware-integrated PonWrt kmods:'
-            for package in "${firmware_kmods[@]}"; do printf '  %s\n' "$package"; done
-            echo 'Standalone PonWrt kmods:'
-            for package in "${standalone_kmods[@]}"; do printf '  %s\n' "$package"; done
+            echo "Kernel patch version: $(sed -n 's/^CONFIG_LINUX_\([0-9][0-9.]*\)=y$/\1/p' .config | head -n1)"
+            echo "Standalone kmod count: ${#standalone_kmods[@]}"
+            echo "Firmware-integrated kmod count: ${#firmware_kmods[@]}"
+            echo
+            echo 'Firmware-integrated kmods (=y; excluded from standalone bundle):'
+            printf '  %s\n' "${firmware_kmods[@]}"
+            echo
+            echo 'Standalone kmods (=m; must be present as native PonWrt APKs):'
+            printf '  %s\n' "${standalone_kmods[@]}"
           } | tee ponwrt-kmod-build-info.txt
-          mkdir -p output/kmods
-          if [ "${#standalone_kmods[@]}" -gt 0 ]; then
-            for package in "${standalone_kmods[@]}"; do
-              case "$package" in
-                kmod-airoha-paged-bosa)
-                  test -f package/feeds/pon_drivers/airoha-pon-frontends/Makefile
-                  grep -q '^define KernelPackage/airoha-paged-bosa$' package/feeds/pon_drivers/airoha-pon-frontends/Makefile
-                  mapfile -t matches < <(find bin/targets/airoha/an7581/packages -maxdepth 1 -type f -name 'kmod-airoha-paged-bosa-*.apk' -print)
-                  ;;
-                *) printf 'No audited standalone artifact collector for %s\n' "$package" >&2; exit 1 ;;
-              esac
-              if [ "${#matches[@]}" -ne 1 ] || [ ! -s "${matches[0]:-}" ]; then
-                printf 'Expected exactly one non-empty native-build APK for %s; found %s\n' "$package" "${#matches[@]}" >&2
-                printf '%s\n' "${matches[@]}" >&2
-                exit 1
-              fi
-              install -m 0644 "${matches[0]}" "output/kmods/$(basename "${matches[0]}")"
-            done
+
+          : > output/kmods/STANDALONE-KMODS.txt
+          : > output/kmods/SHA256SUMS
+          missing=0
+          for package in "${standalone_kmods[@]}"; do
+            mapfile -t matches < <(find "$package_dir" -maxdepth 1 -type f -name "${package}-*.apk" -print | sort)
+            if [ "${#matches[@]}" -ne 1 ] || [ ! -s "${matches[0]:-}" ]; then
+              printf 'Expected exactly one non-empty native PonWrt APK for %s; found %s\n' "$package" "${#matches[@]}" >&2
+              printf '%s\n' "${matches[@]}" >&2
+              missing=1
+              continue
+            fi
+            install -m 0644 "${matches[0]}" "output/kmods/$(basename "${matches[0]}")"
+            printf '%s\n' "$package" >> output/kmods/STANDALONE-KMODS.txt
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo 'One or more configured standalone kmods are missing; refusing partial publication.' >&2
+            exit 1
           fi
-          (cd output/kmods && find . -maxdepth 1 -type f -name '*.apk' -print0 | sort -z | xargs -0 -r sha256sum) > output/kmods/SHA256SUMS
+
+          (
+            cd output/kmods
+            find . -maxdepth 1 -type f -name '*.apk' -print0 | sort -z | xargs -0 -r sha256sum
+          ) > output/kmods/SHA256SUMS
           {
-            echo 'Firmware-integrated PonWrt kmods:'
-            printf '%s\n' "${firmware_kmods[@]}"
-            echo 'Standalone PonWrt kmod APKs:'
+            echo "PonWrt commit: ${GITHUB_SHA}"
+            echo "Firmware .config SHA256: $(sha256sum .config | awk '{print $1}')"
+            echo "Standalone kmod APK count: $(find output/kmods -maxdepth 1 -type f -name '*.apk' | wc -l)"
+            echo
+            echo 'Standalone kmods:'
+            cat output/kmods/STANDALONE-KMODS.txt
+            echo
+            echo 'SHA256:'
             cat output/kmods/SHA256SUMS
           } > output/kmods/BUILD-INFO.txt
+
       - name: Verify and stage firmware and Bootloader artifacts
         shell: bash
         run: |
