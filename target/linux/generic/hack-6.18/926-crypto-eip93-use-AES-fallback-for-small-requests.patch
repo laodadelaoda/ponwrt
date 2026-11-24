@@ -156,7 +156,7 @@ Signed-off-by: Aviana Cruz <gwencroft@proton.me>
  /* Available algorithms in this module */
 --- a/drivers/crypto/inside-secure/eip93/eip93-cipher.h
 +++ b/drivers/crypto/inside-secure/eip93/eip93-cipher.h
-@@ -22,6 +22,8 @@ struct eip93_crypto_ctx {
+@@ -22,5 +22,7 @@ struct eip93_crypto_ctx {
  	unsigned int			assoclen;
  	bool				set_assoc;
  	enum eip93_alg_type		type;
