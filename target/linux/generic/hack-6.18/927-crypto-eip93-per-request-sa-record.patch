@@ -49,8 +49,25 @@ exactly once.
  	if (ctx->fallback)
  		crypto_free_sync_skcipher(ctx->fallback);
  }
-@@ -182,10 +182,20 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
+@@ -182,24 +182,34 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
  			return -EINVAL;
+ 
+ 	if (fallback &&
+ 	    req->cryptlen <= (ctx->aes_keylen == AES_KEYSIZE_128 ?
+ 			      CONFIG_CRYPTO_DEV_EIP93_AES_128_SW_MAX_LEN :
+ 			      CONFIG_CRYPTO_DEV_EIP93_GENERIC_SW_MAX_LEN)) {
+ 		SYNC_SKCIPHER_REQUEST_ON_STACK(fallback_req, ctx->fallback);
+ 
+ 		skcipher_request_set_sync_tfm(fallback_req, ctx->fallback);
+ 		skcipher_request_set_callback(fallback_req, req->base.flags,
+ 					      NULL, NULL);
+ 		skcipher_request_set_crypt(fallback_req, req->src, req->dst,
+ 					   req->cryptlen, req->iv);
+ 		ret = encrypt ? crypto_skcipher_encrypt(fallback_req) :
+ 				crypto_skcipher_decrypt(fallback_req);
+ 		skcipher_request_zero(fallback_req);
+ 		return ret;
+ 	}
  
 -	ctx->sa_record_base = dma_map_single(ctx->eip93->dev, ctx->sa_record,
 -					     sizeof(*ctx->sa_record), DMA_TO_DEVICE);
