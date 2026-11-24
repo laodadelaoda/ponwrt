@@ -1,0 +1,106 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: PonWrt Maintainers <ponwrt@example.invalid>
+Subject: [PATCH] crypto: eip93: fix DMA state direction and IDR failures
+
+The EIP93 state buffers are read and written by the engine, but were mapped
+DMA_TO_DEVICE and unmapped DMA_FROM_DEVICE. Use DMA_BIDIRECTIONAL consistently.
+
+Also reject a failed async-IDR allocation before encoding it in a descriptor,
+and unwind the IDR entry and DMA mappings on later synchronous failures.
+
+---
+--- a/drivers/crypto/inside-secure/eip93/eip93-common.c
++++ b/drivers/crypto/inside-secure/eip93/eip93-common.c
+@@ -521,6 +521,6 @@ int eip93_send_req(struct crypto_async_request *async,
+ 	u32 start, end, ctr, blocks;
+ 	u32 iv[AES_BLOCK_SIZE / sizeof(u32)];
+-	int crypto_async_idr;
++	int crypto_async_idr = -1;
+ 
+ 	rctx->sa_state_ctr = NULL;
+ 	rctx->sa_state = NULL;
+@@ -574,6 +574,6 @@ int eip93_send_req(struct crypto_async_request *async,
+ 			rctx->sa_state_ctr_base = dma_map_single(eip93->dev, rctx->sa_state_ctr,
+ 								 sizeof(*rctx->sa_state_ctr),
+-								 DMA_TO_DEVICE);
++								 DMA_BIDIRECTIONAL);
+ 			err = dma_mapping_error(eip93->dev, rctx->sa_state_ctr_base);
+ 			if (err)
+ 				goto free_sa_state_ctr;
+@@ -583,6 +583,6 @@ int eip93_send_req(struct crypto_async_request *async,
+ 	rctx->sa_state_base = dma_map_single(eip93->dev, rctx->sa_state,
+ 					     sizeof(*rctx->sa_state),
+-					     DMA_TO_DEVICE);
++					     DMA_BIDIRECTIONAL);
+ 	err = dma_mapping_error(eip93->dev, rctx->sa_state_base);
+ 	if (err)
+ 		goto free_sa_state_ctr_dma;
+@@ -596,6 +596,10 @@ int eip93_send_req(struct crypto_async_request *async,
+ 	scoped_guard(spinlock_bh, &eip93->ring->idr_lock)
+ 		crypto_async_idr = idr_alloc(&eip93->ring->crypto_async_idr, async, 0,
+ 					     EIP93_RING_NUM - 1, GFP_ATOMIC);
++	if (crypto_async_idr < 0) {
++		err = crypto_async_idr;
++		goto free_sa_state_dma;
++	}
+ 
+ 	cdesc.user_id = FIELD_PREP(EIP93_PE_USER_ID_CRYPTO_IDR, (u16)crypto_async_idr) |
+ 			FIELD_PREP(EIP93_PE_USER_ID_DESC_FLAGS, rctx->desc_flags);
+@@ -608,28 +612,39 @@ int eip93_send_req(struct crypto_async_request *async,
+ 	if (!dma_map_sg(eip93->dev, dst, rctx->dst_nents, DMA_BIDIRECTIONAL)) {
+ 		err = -ENOMEM;
+-		goto free_sa_state_ctr_dma;
++		goto free_idr;
+ 	}
+ 
+ 	if (src != dst &&
+ 	    !dma_map_sg(eip93->dev, src, rctx->src_nents, DMA_TO_DEVICE)) {
+ 		err = -ENOMEM;
+ 		goto free_sg_dma;
+ 	}
+ 
+-	return eip93_scatter_combine(eip93, rctx, datalen, split, offsetin);
++	err = eip93_scatter_combine(eip93, rctx, datalen, split, offsetin);
++	if (err == -EINPROGRESS)
++		return err;
++	if (src != dst)
++		dma_unmap_sg(eip93->dev, src, rctx->src_nents, DMA_TO_DEVICE);
++	dma_unmap_sg(eip93->dev, dst, rctx->dst_nents, DMA_BIDIRECTIONAL);
++	goto free_idr;
+ 
+ free_sg_dma:
+ 	dma_unmap_sg(eip93->dev, dst, rctx->dst_nents, DMA_BIDIRECTIONAL);
++free_idr:
++	if (crypto_async_idr >= 0) {
++		scoped_guard(spinlock_bh, &eip93->ring->idr_lock)
++			idr_remove(&eip93->ring->crypto_async_idr, crypto_async_idr);
++	}
++free_sa_state_dma:
++	if (rctx->sa_state)
++		dma_unmap_single(eip93->dev, rctx->sa_state_base,
++				 sizeof(*rctx->sa_state), DMA_BIDIRECTIONAL);
+ free_sa_state_ctr_dma:
+ 	if (rctx->sa_state_ctr)
+ 		dma_unmap_single(eip93->dev, rctx->sa_state_ctr_base,
+ 				 sizeof(*rctx->sa_state_ctr),
+-				 DMA_TO_DEVICE);
++				 DMA_BIDIRECTIONAL);
+ free_sa_state_ctr:
+ 	kfree(rctx->sa_state_ctr);
+-	if (rctx->sa_state)
+-		dma_unmap_single(eip93->dev, rctx->sa_state_base,
+-				 sizeof(*rctx->sa_state),
+-				 DMA_TO_DEVICE);
+ free_sa_state:
+ 	kfree(rctx->sa_state);
+@@ -687,9 +702,9 @@ void eip93_handle_result(struct eip93_device *eip93, struct eip93_cipher_reqctx *rctx,
+ 	if (rctx->sa_state_ctr)
+ 		dma_unmap_single(eip93->dev, rctx->sa_state_ctr_base,
+ 				 sizeof(*rctx->sa_state_ctr),
+-				 DMA_FROM_DEVICE);
++				 DMA_BIDIRECTIONAL);
+ 
+ 	if (rctx->sa_state)
+ 		dma_unmap_single(eip93->dev, rctx->sa_state_base,
+ 				 sizeof(*rctx->sa_state),
+-				 DMA_FROM_DEVICE);
