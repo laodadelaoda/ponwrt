@@ -48,7 +48,7 @@ exactly once.
  	if (ctx->fallback)
  		crypto_free_sync_skcipher(ctx->fallback);
  }
-@@ -181,10 +181,20 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
+@@ -182,10 +182,20 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
  		return -EINVAL;
  
 -	ctx->sa_record_base = dma_map_single(ctx->eip93->dev, ctx->sa_record,
@@ -74,7 +74,7 @@ exactly once.
  
  	rctx->assoclen = 0;
  	rctx->textsize = req->cryptlen;
-@@ -211,7 +221,13 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
+@@ -212,7 +222,13 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
  	rctx->ivsize = crypto_skcipher_ivsize(skcipher);
  	rctx->blksize = ctx->blksize;
  	rctx->desc_flags = EIP93_DESC_SKCIPHER;
@@ -90,7 +90,7 @@ exactly once.
 +	}
 +	return ret;
  }
-@@ -232,13 +248,10 @@ static int eip93_skcipher_decrypt(struct skcipher_request *req)
+@@ -233,13 +249,10 @@ static int eip93_skcipher_decrypt(struct skcipher_request *req)
  {
 -	struct eip93_crypto_ctx *ctx = crypto_tfm_ctx(req->base.tfm);
  	struct eip93_cipher_reqctx *rctx = skcipher_request_ctx(req);
