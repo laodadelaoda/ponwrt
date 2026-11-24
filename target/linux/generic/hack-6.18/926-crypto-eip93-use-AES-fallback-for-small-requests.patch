@@ -117,7 +117,7 @@ Signed-off-by: Aviana Cruz <gwencroft@proton.me>
  	if (!req->cryptlen)
 @@ -153,6 +181,23 @@ static int eip93_skcipher_crypt(struct
  				crypto_skcipher_blocksize(skcipher)))
- 		return -EINVAL;
+ 			return -EINVAL;
  
 +	if (fallback &&
 +	    req->cryptlen <= (ctx->aes_keylen == AES_KEYSIZE_128 ?
