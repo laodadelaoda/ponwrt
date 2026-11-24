@@ -27,7 +27,7 @@ exactly once.
  
  	skcipher_request_complete(req, err);
  }
-@@ -39,9 +39,7 @@ static int eip93_skcipher_send_req(struct crypto_async_request *async)
+@@ -46,9 +50,7 @@ static int eip93_skcipher_send_req(struct crypto_async_request *async)
  	err = check_valid_request(rctx);
  
 -	if (err) {
@@ -38,7 +38,7 @@ exactly once.
  
  	return eip93_send_req(async, req->iv, rctx);
  }
-@@ -71,8 +71,6 @@ static void eip93_skcipher_cra_exit(struct crypto_tfm *tfm)
+@@ -86,8 +88,6 @@ static void eip93_skcipher_cra_exit(struct crypto_tfm *tfm)
  {
  	struct eip93_crypto_ctx *ctx = crypto_tfm_ctx(tfm);
  
