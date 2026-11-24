@@ -37,7 +37,7 @@ for an error returned synchronously.
  {
 --- a/drivers/crypto/inside-secure/eip93/eip93-cipher.h
 +++ b/drivers/crypto/inside-secure/eip93/eip93-cipher.h
-@@ -48,4 +48,8 @@ int check_valid_request(struct eip93_cipher_reqctx *rctx);
+@@ -49,4 +49,8 @@ int check_valid_request(struct eip93_cipher_reqctx *rctx);
  
 +void eip93_cleanup_sg_copies(struct eip93_cipher_reqctx *rctx,
 +			     struct scatterlist *reqsrc,
