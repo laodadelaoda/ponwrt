@@ -114,7 +114,7 @@ Signed-off-by: Aviana Cruz <gwencroft@proton.me>
  	int ret;
  
  	if (!req->cryptlen)
-@@ -153,6 +172,22 @@ static int eip93_skcipher_crypt(struct
+@@ -153,6 +172,23 @@ static int eip93_skcipher_crypt(struct
  				crypto_skcipher_blocksize(skcipher)))
  		return -EINVAL;
  
@@ -138,7 +138,7 @@ Signed-off-by: Aviana Cruz <gwencroft@proton.me>
  	ctx->sa_record_base = dma_map_single(ctx->eip93->dev, ctx->sa_record,
  					     sizeof(*ctx->sa_record), DMA_TO_DEVICE);
  	ret = dma_mapping_error(ctx->eip93->dev, ctx->sa_record_base);
-@@ -181,7 +216,7 @@ static int eip93_skcipher_encrypt(struct
+@@ -181,7 +217,7 @@ static int eip93_skcipher_encrypt(struct
  	rctx->flags = tmpl->flags;
  	rctx->flags |= EIP93_ENCRYPT;
  
@@ -147,7 +147,7 @@ Signed-off-by: Aviana Cruz <gwencroft@proton.me>
  }
  
  static int eip93_skcipher_decrypt(struct skcipher_request *req)
-@@ -196,7 +231,7 @@ static int eip93_skcipher_decrypt(struct
+@@ -196,7 +232,7 @@ static int eip93_skcipher_decrypt(struct
  	rctx->flags = tmpl->flags;
  	rctx->flags |= EIP93_DECRYPT;
  
