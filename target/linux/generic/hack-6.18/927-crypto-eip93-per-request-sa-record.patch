@@ -38,13 +38,14 @@ exactly once.
  
  	return eip93_send_req(async, req->iv, rctx);
  }
-@@ -87,9 +89,7 @@ static void eip93_skcipher_cra_exit(struct crypto_tfm *tfm)
+@@ -87,10 +89,8 @@ static void eip93_skcipher_cra_exit(struct crypto_tfm *tfm)
  {
  	struct eip93_crypto_ctx *ctx = crypto_tfm_ctx(tfm);
  
 -	dma_unmap_single(ctx->eip93->dev, ctx->sa_record_base,
 -			 sizeof(*ctx->sa_record), DMA_TO_DEVICE);
  	kfree(ctx->sa_record);
+ 
  	if (ctx->fallback)
  		crypto_free_sync_skcipher(ctx->fallback);
  }
