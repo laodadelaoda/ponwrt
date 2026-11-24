@@ -73,7 +73,7 @@ exactly once.
  
  	rctx->assoclen = 0;
  	rctx->textsize = req->cryptlen;
-@@ -201,7 +211,13 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
+@@ -202,7 +212,13 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
  	rctx->ivsize = crypto_skcipher_ivsize(skcipher);
  	rctx->blksize = ctx->blksize;
  	rctx->desc_flags = EIP93_DESC_SKCIPHER;
@@ -89,7 +89,7 @@ exactly once.
 +	}
 +	return ret;
  }
-@@ -221,13 +237,10 @@ static int eip93_skcipher_decrypt(struct skcipher_request *req)
+@@ -222,13 +238,10 @@ static int eip93_skcipher_decrypt(struct skcipher_request *req)
  {
 -	struct eip93_crypto_ctx *ctx = crypto_tfm_ctx(req->base.tfm);
  	struct eip93_cipher_reqctx *rctx = skcipher_request_ctx(req);
