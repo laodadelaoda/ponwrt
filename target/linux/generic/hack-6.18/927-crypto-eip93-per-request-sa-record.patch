@@ -49,7 +49,7 @@ exactly once.
  	if (ctx->fallback)
  		crypto_free_sync_skcipher(ctx->fallback);
  }
-@@ -182,24 +182,34 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
+@@ -182,27 +182,37 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
  			return -EINVAL;
  
  	if (fallback &&
