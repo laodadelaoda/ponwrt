@@ -104,9 +104,9 @@ and unwind the IDR entry and DMA mappings on later synchronous failures.
  				 sizeof(*rctx->sa_state_ctr),
 -				 DMA_FROM_DEVICE);
 +				 DMA_BIDIRECTIONAL);
-+				 DMA_BIDIRECTIONAL);
  
  	if (rctx->sa_state)
  		dma_unmap_single(eip93->dev, rctx->sa_state_base,
  				 sizeof(*rctx->sa_state),
 -				 DMA_FROM_DEVICE);
++				 DMA_BIDIRECTIONAL);
