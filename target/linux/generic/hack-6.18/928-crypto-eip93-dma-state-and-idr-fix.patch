@@ -30,11 +30,10 @@ and unwind the IDR entry and DMA mappings on later synchronous failures.
 +				err = -ENOMEM;
  				goto free_sa_state_ctr;
 +			}
-@@ -583,6 +585,8 @@ int eip93_send_req(struct crypto_async_request *async,
+@@ -583,5 +585,7 @@ int eip93_send_req(struct crypto_async_request *async,
  	rctx->sa_state_base = dma_map_single(eip93->dev, rctx->sa_state,
- 					     sizeof(*rctx->sa_state),
--					     DMA_TO_DEVICE);
-+					     DMA_BIDIRECTIONAL);
+-					     sizeof(*rctx->sa_state), DMA_TO_DEVICE);
++					     sizeof(*rctx->sa_state), DMA_BIDIRECTIONAL);
  	err = dma_mapping_error(eip93->dev, rctx->sa_state_base);
 -	if (err)
 +	if (err) {
