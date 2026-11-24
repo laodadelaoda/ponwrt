@@ -45,7 +45,7 @@ Signed-off-by: Aviana Cruz <gwencroft@proton.me>
  static int eip93_skcipher_send_req(struct crypto_async_request *async)
  {
  	struct skcipher_request *req = skcipher_request_cast(async);
-@@ -52,12 +59,19 @@ static int eip93_skcipher_cra_init(struc
+@@ -52,12 +59,20 @@ static int eip93_skcipher_cra_init(struc
  	struct eip93_crypto_ctx *ctx = crypto_tfm_ctx(tfm);
  	struct eip93_alg_template *tmpl = container_of(tfm->__crt_alg,
  				struct eip93_alg_template, alg.skcipher.base);
@@ -114,7 +114,7 @@ Signed-off-by: Aviana Cruz <gwencroft@proton.me>
  	int ret;
  
  	if (!req->cryptlen)
-@@ -153,6 +173,23 @@ static int eip93_skcipher_crypt(struct
+@@ -153,6 +173,21 @@ static int eip93_skcipher_crypt(struct
  				crypto_skcipher_blocksize(skcipher)))
  		return -EINVAL;
  
@@ -161,7 +161,7 @@ Signed-off-by: Aviana Cruz <gwencroft@proton.me>
  	bool				set_assoc;
  	enum eip93_alg_type		type;
 +	unsigned int			aes_keylen;
- 	struct crypto_skcipher		*fallback;
+ 	struct crypto_sync_skcipher	*fallback;
  };
  
 @@ -42,4 +43,4 @@ struct eip93_cipher_reqctx {
