@@ -13,7 +13,7 @@ for an error returned synchronously.
 ---
 --- a/drivers/crypto/inside-secure/eip93/eip93-common.c
 +++ b/drivers/crypto/inside-secure/eip93/eip93-common.c
-@@ -140,6 +140,21 @@ static void eip93_free_sg_copy(const int len, struct scatterlist **sg)
+@@ -147,6 +147,21 @@ static void eip93_free_sg_copy(const int len, struct scatterlist **sg)
  	*sg = NULL;
  }
  
@@ -37,7 +37,7 @@ for an error returned synchronously.
  {
 --- a/drivers/crypto/inside-secure/eip93/eip93-cipher.h
 +++ b/drivers/crypto/inside-secure/eip93/eip93-cipher.h
-@@ -36,4 +36,8 @@ int check_valid_request(struct eip93_cipher_reqctx *rctx);
+@@ -48,4 +48,8 @@ int check_valid_request(struct eip93_cipher_reqctx *rctx);
  
 +void eip93_cleanup_sg_copies(struct eip93_cipher_reqctx *rctx,
 +			     struct scatterlist *reqsrc,
@@ -48,7 +48,7 @@ for an error returned synchronously.
  
 --- a/drivers/crypto/inside-secure/eip93/eip93-cipher.c
 +++ b/drivers/crypto/inside-secure/eip93/eip93-cipher.c
-@@ -45,9 +45,14 @@ static int eip93_skcipher_send_req(struct crypto_async_request *async)
+@@ -43,9 +43,14 @@ static int eip93_skcipher_send_req(struct crypto_async_request *async)
  	err = check_valid_request(rctx);
  
 -	if (err)
@@ -67,7 +67,7 @@ for an error returned synchronously.
  /* Crypto skcipher API functions */
 --- a/drivers/crypto/inside-secure/eip93/eip93-aead.c
 +++ b/drivers/crypto/inside-secure/eip93/eip93-aead.c
-@@ -43,11 +43,14 @@ static int eip93_aead_send_req(struct crypto_async_request *async)
+@@ -48,11 +48,14 @@ static int eip93_aead_send_req(struct crypto_async_request *async)
  
  	err = check_valid_request(rctx);
  	if (err) {
