@@ -47,7 +47,7 @@ exactly once.
  	kfree(ctx->sa_record);
  	crypto_free_sync_skcipher(ctx->fallback);
  }
-@@ -153,10 +152,20 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
+@@ -173,10 +173,20 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
  		return -EINVAL;
  
 -	ctx->sa_record_base = dma_map_single(ctx->eip93->dev, ctx->sa_record,
@@ -73,7 +73,7 @@ exactly once.
  
  	rctx->assoclen = 0;
  	rctx->textsize = req->cryptlen;
-@@ -173,7 +183,13 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
+@@ -202,7 +212,13 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
  	rctx->ivsize = crypto_skcipher_ivsize(skcipher);
  	rctx->blksize = ctx->blksize;
  	rctx->desc_flags = EIP93_DESC_SKCIPHER;
@@ -89,7 +89,7 @@ exactly once.
 +	}
 +	return ret;
  }
-@@ -187,13 +194,10 @@ static int eip93_skcipher_decrypt(struct skcipher_request *req)
+@@ -221,13 +237,10 @@ static int eip93_skcipher_decrypt(struct skcipher_request *req)
  {
 -	struct eip93_crypto_ctx *ctx = crypto_tfm_ctx(req->base.tfm);
  	struct eip93_cipher_reqctx *rctx = skcipher_request_ctx(req);
@@ -105,7 +105,7 @@ exactly once.
  }
 --- a/drivers/crypto/inside-secure/eip93/eip93-cipher.h
 +++ b/drivers/crypto/inside-secure/eip93/eip93-cipher.h
-@@ -32,4 +32,5 @@ struct eip93_cipher_reqctx {
+@@ -36,4 +36,5 @@ struct eip93_cipher_reqctx {
  	unsigned int			authsize;
  	dma_addr_t			sa_record_base;
 +	struct sa_record		*sa_record;
