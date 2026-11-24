@@ -98,11 +98,12 @@ and unwind the IDR entry and DMA mappings on later synchronous failures.
 -				 DMA_TO_DEVICE);
  free_sa_state:
  	kfree(rctx->sa_state);
-@@ -687,9 +706,8 @@ void eip93_handle_result(struct eip93_device *eip93, struct eip93_cipher_reqctx *rctx,
+@@ -687,9 +706,9 @@ void eip93_handle_result(struct eip93_device *eip93, struct eip93_cipher_reqctx *rctx,
  	if (rctx->sa_state_ctr)
  		dma_unmap_single(eip93->dev, rctx->sa_state_ctr_base,
  				 sizeof(*rctx->sa_state_ctr),
 -				 DMA_FROM_DEVICE);
++				 DMA_BIDIRECTIONAL);
 +				 DMA_BIDIRECTIONAL);
  
  	if (rctx->sa_state)
