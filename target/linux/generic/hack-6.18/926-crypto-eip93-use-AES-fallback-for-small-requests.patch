@@ -165,9 +165,9 @@ Signed-off-by: Aviana Cruz <gwencroft@proton.me>
  	struct crypto_skcipher		*fallback;
  };
  
-@@ -42,6 +43,7 @@ struct eip93_cipher_reqctx {
+@@ -42,4 +43,5 @@ struct eip93_cipher_reqctx {
  	int				dst_nents;
  	struct sa_state			*sa_state_ctr;
  	dma_addr_t			sa_state_ctr_base;
- +	struct skcipher_request		fallback_req;
++	struct skcipher_request		fallback_req;
  };
