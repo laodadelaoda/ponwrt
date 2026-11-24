@@ -11,7 +11,7 @@ and unwind the IDR entry and DMA mappings on later synchronous failures.
 ---
 --- a/drivers/crypto/inside-secure/eip93/eip93-common.c
 +++ b/drivers/crypto/inside-secure/eip93/eip93-common.c
-@@ -521,6 +521,6 @@ int eip93_send_req(struct crypto_async_request *async,
+@@ -524,6 +524,6 @@ int eip93_send_req(struct crypto_async_request *async,
  	u32 start, end, ctr, blocks;
  	u32 iv[AES_BLOCK_SIZE / sizeof(u32)];
 -	int crypto_async_idr;
