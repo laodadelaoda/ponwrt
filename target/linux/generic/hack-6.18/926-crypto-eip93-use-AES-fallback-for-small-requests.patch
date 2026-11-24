@@ -79,7 +79,7 @@ Signed-off-by: Aviana Cruz <gwencroft@proton.me>
  }
  
  static int eip93_skcipher_setkey(struct crypto_skcipher *ctfm, const u8 *key,
-@@ -117,12 +135,15 @@ static int eip93_skcipher_setkey(struct
+@@ -117,19 +135,20 @@ static int eip93_skcipher_setkey(struct
  
  	if (flags & EIP93_ALG_AES) {
  		struct crypto_aes_ctx aes;
@@ -157,7 +157,7 @@ Signed-off-by: Aviana Cruz <gwencroft@proton.me>
  /* Available algorithms in this module */
 --- a/drivers/crypto/inside-secure/eip93/eip93-cipher.h
 +++ b/drivers/crypto/inside-secure/eip93/eip93-cipher.h
-@@ -22,6 +22,8 @@ struct eip93_crypto_ctx {
+@@ -22,6 +22,7 @@ struct eip93_crypto_ctx {
  	unsigned int			assoclen;
  	bool				set_assoc;
  	enum eip93_alg_type		type;
@@ -165,9 +165,9 @@ Signed-off-by: Aviana Cruz <gwencroft@proton.me>
  	struct crypto_skcipher		*fallback;
  };
  
-@@ -42,6 +44,7 @@ struct eip93_cipher_reqctx {
+@@ -42,6 +43,7 @@ struct eip93_cipher_reqctx {
  	int				dst_nents;
  	struct sa_state			*sa_state_ctr;
  	dma_addr_t			sa_state_ctr_base;
- 	struct skcipher_request		fallback_req;
+ +	struct skcipher_request		fallback_req;
  };
