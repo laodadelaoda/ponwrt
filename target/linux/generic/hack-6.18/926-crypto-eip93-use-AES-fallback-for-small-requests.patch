@@ -19,16 +19,16 @@ Signed-off-by: Aviana Cruz <gwencroft@proton.me>
 +	depends on CRYPTO_DEV_EIP93
 +	default 256
 +	help
-+	  Max length of crypt request which
-+	  will fallback to software crypt of skcipher *except* AES-128.
++	  Max length of AES ECB/CBC requests which
++	  will fallback to software, except AES-128. CTR always uses EIP93.
 +
 +config CRYPTO_DEV_EIP93_AES_128_SW_MAX_LEN
 +	int "Max AES-128 skcipher software fallback length"
 +	depends on CRYPTO_DEV_EIP93
 +	default 512
 +	help
-+	  Max length of crypt request which
-+	  will fallback to software crypt of AES-128 skcipher.
++	  Max length of AES-128 ECB/CBC requests which
++	  will fallback to software. CTR always uses EIP93.
 --- a/drivers/crypto/inside-secure/eip93/eip93-cipher.c
 +++ b/drivers/crypto/inside-secure/eip93/eip93-cipher.c
 @@ -30,6 +30,13 @@ void eip93_skcipher_handle_result(struct
@@ -39,7 +39,7 @@ Signed-off-by: Aviana Cruz <gwencroft@proton.me>
 +					      u32 flags)
 +{
 +	return (tfm->__crt_alg->cra_flags & CRYPTO_ALG_NEED_FALLBACK) &&
-+		!IS_RFC3686(flags);
++		!IS_RFC3686(flags) && !IS_CTR(flags);
 +}
 +
  static int eip93_skcipher_send_req(struct crypto_async_request *async)
