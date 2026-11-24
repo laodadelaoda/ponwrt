@@ -19,23 +19,27 @@ and unwind the IDR entry and DMA mappings on later synchronous failures.
  
  	rctx->sa_state_ctr = NULL;
  	rctx->sa_state = NULL;
-@@ -574,6 +574,6 @@ int eip93_send_req(struct crypto_async_request *async,
+@@ -574,6 +574,8 @@ int eip93_send_req(struct crypto_async_request *async,
  			rctx->sa_state_ctr_base = dma_map_single(eip93->dev, rctx->sa_state_ctr,
  								 sizeof(*rctx->sa_state_ctr),
 -								 DMA_TO_DEVICE);
 +								 DMA_BIDIRECTIONAL);
  			err = dma_mapping_error(eip93->dev, rctx->sa_state_ctr_base);
- 			if (err)
+ 			if (err) {
++				err = -ENOMEM;
  				goto free_sa_state_ctr;
-@@ -583,6 +583,6 @@ int eip93_send_req(struct crypto_async_request *async,
++			}
+@@ -583,6 +585,8 @@ int eip93_send_req(struct crypto_async_request *async,
  	rctx->sa_state_base = dma_map_single(eip93->dev, rctx->sa_state,
  					     sizeof(*rctx->sa_state),
 -					     DMA_TO_DEVICE);
 +					     DMA_BIDIRECTIONAL);
  	err = dma_mapping_error(eip93->dev, rctx->sa_state_base);
- 	if (err)
+ 	if (err) {
++		err = -ENOMEM;
  		goto free_sa_state_ctr_dma;
-@@ -596,6 +596,10 @@ int eip93_send_req(struct crypto_async_request *async,
++	}
+@@ -596,6 +600,10 @@ int eip93_send_req(struct crypto_async_request *async,
  	scoped_guard(spinlock_bh, &eip93->ring->idr_lock)
  		crypto_async_idr = idr_alloc(&eip93->ring->crypto_async_idr, async, 0,
  					     EIP93_RING_NUM - 1, GFP_ATOMIC);
@@ -46,7 +50,7 @@ and unwind the IDR entry and DMA mappings on later synchronous failures.
  
  	cdesc.user_id = FIELD_PREP(EIP93_PE_USER_ID_CRYPTO_IDR, (u16)crypto_async_idr) |
  			FIELD_PREP(EIP93_PE_USER_ID_DESC_FLAGS, rctx->desc_flags);
-@@ -608,28 +612,39 @@ int eip93_send_req(struct crypto_async_request *async,
+@@ -608,28 +616,39 @@ int eip93_send_req(struct crypto_async_request *async,
  	if (!dma_map_sg(eip93->dev, dst, rctx->dst_nents, DMA_BIDIRECTIONAL)) {
  		err = -ENOMEM;
 -		goto free_sa_state_ctr_dma;
@@ -93,7 +97,7 @@ and unwind the IDR entry and DMA mappings on later synchronous failures.
 -				 DMA_TO_DEVICE);
  free_sa_state:
  	kfree(rctx->sa_state);
-@@ -687,9 +702,8 @@ void eip93_handle_result(struct eip93_device *eip93, struct eip93_cipher_reqctx *rctx,
+@@ -687,9 +706,8 @@ void eip93_handle_result(struct eip93_device *eip93, struct eip93_cipher_reqctx *rctx,
  	if (rctx->sa_state_ctr)
  		dma_unmap_single(eip93->dev, rctx->sa_state_ctr_base,
  				 sizeof(*rctx->sa_state_ctr),
