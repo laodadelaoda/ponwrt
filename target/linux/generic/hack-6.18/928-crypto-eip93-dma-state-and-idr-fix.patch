@@ -25,7 +25,8 @@ and unwind the IDR entry and DMA mappings on later synchronous failures.
 -								 DMA_TO_DEVICE);
 +								 DMA_BIDIRECTIONAL);
  			err = dma_mapping_error(eip93->dev, rctx->sa_state_ctr_base);
- 			if (err) {
+-			if (err)
++			if (err) {
 +				err = -ENOMEM;
  				goto free_sa_state_ctr;
 +			}
@@ -35,7 +36,8 @@ and unwind the IDR entry and DMA mappings on later synchronous failures.
 -					     DMA_TO_DEVICE);
 +					     DMA_BIDIRECTIONAL);
  	err = dma_mapping_error(eip93->dev, rctx->sa_state_base);
- 	if (err) {
+-	if (err)
++	if (err) {
 +		err = -ENOMEM;
  		goto free_sa_state_ctr_dma;
 +	}
