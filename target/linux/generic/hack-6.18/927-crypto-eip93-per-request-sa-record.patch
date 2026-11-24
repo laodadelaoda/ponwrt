@@ -50,7 +50,7 @@ exactly once.
  		crypto_free_sync_skcipher(ctx->fallback);
  }
 @@ -182,10 +182,20 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
- 		return -EINVAL;
+ 			return -EINVAL;
  
 -	ctx->sa_record_base = dma_map_single(ctx->eip93->dev, ctx->sa_record,
 -					     sizeof(*ctx->sa_record), DMA_TO_DEVICE);
