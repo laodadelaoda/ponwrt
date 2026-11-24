@@ -1,0 +1,113 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: PonWrt Maintainers <ponwrt@example.invalid>
+Subject: [PATCH] crypto: eip93: isolate skcipher SA records per request
+
+The skcipher transform currently maps one shared SA record for every request,
+stores the DMA address in the transform context, and mutates the shared SA
+direction bit for decrypt operations. Concurrent requests can overwrite the
+DMA address or race while changing the SA command word.
+
+Copy the immutable key/algorithm SA template into each request context, map
+that copy for DMA, and release it on synchronous failure or request completion.
+Return validation errors synchronously so request-owned resources are unwound
+exactly once.
+
+---
+--- a/drivers/crypto/inside-secure/eip93/eip93-cipher.c
++++ b/drivers/crypto/inside-secure/eip93/eip93-cipher.c
+@@ -24,7 +24,11 @@ void eip93_skcipher_handle_result(struct crypto_async_request *async, int err)
+ 	struct eip93_cipher_reqctx *rctx = skcipher_request_ctx(req);
+ 
+ 	eip93_unmap_dma(eip93, rctx, req->src, req->dst);
+ 	eip93_handle_result(eip93, rctx, req->iv);
++	dma_unmap_single(eip93->dev, rctx->sa_record_base,
++			 sizeof(*rctx->sa_record), DMA_TO_DEVICE);
++	kfree(rctx->sa_record);
++	rctx->sa_record = NULL;
+ 
+ 	skcipher_request_complete(req, err);
+ }
+@@ -39,9 +39,7 @@ static int eip93_skcipher_send_req(struct crypto_async_request *async)
+ 	err = check_valid_request(rctx);
+ 
+-	if (err) {
+-		skcipher_request_complete(req, err);
++	if (err)
+ 		return err;
+-	}
+ 
+ 	return eip93_send_req(async, req->iv, rctx);
+ }
+@@ -71,8 +71,6 @@ static void eip93_skcipher_cra_exit(struct crypto_tfm *tfm)
+ {
+ 	struct eip93_crypto_ctx *ctx = crypto_tfm_ctx(tfm);
+ 
+-	dma_unmap_single(ctx->eip93->dev, ctx->sa_record_base,
+-			 sizeof(*ctx->sa_record), DMA_TO_DEVICE);
+ 	kfree(ctx->sa_record);
+ 	crypto_free_sync_skcipher(ctx->fallback);
+ }
+@@ -153,10 +152,20 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
+ 		return -EINVAL;
+ 
+-	ctx->sa_record_base = dma_map_single(ctx->eip93->dev, ctx->sa_record,
+-					     sizeof(*ctx->sa_record), DMA_TO_DEVICE);
+-	ret = dma_mapping_error(ctx->eip93->dev, ctx->sa_record_base);
+-	if (ret)
+-		return ret;
++	rctx->sa_record = kmemdup(ctx->sa_record, sizeof(*rctx->sa_record),
++				 GFP_KERNEL);
++	if (!rctx->sa_record)
++		return -ENOMEM;
++
++	if (IS_DECRYPT(rctx->flags))
++		rctx->sa_record->sa_cmd0_word |= EIP93_SA_CMD_DIRECTION_IN;
++
++	rctx->sa_record_base = dma_map_single(ctx->eip93->dev, rctx->sa_record,
++					     sizeof(*rctx->sa_record), DMA_TO_DEVICE);
++	if (dma_mapping_error(ctx->eip93->dev, rctx->sa_record_base)) {
++		kfree(rctx->sa_record);
++		rctx->sa_record = NULL;
++		return -ENOMEM;
++	}
+ 
+ 	rctx->assoclen = 0;
+ 	rctx->textsize = req->cryptlen;
+@@ -173,7 +183,13 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
+ 	rctx->ivsize = crypto_skcipher_ivsize(skcipher);
+ 	rctx->blksize = ctx->blksize;
+ 	rctx->desc_flags = EIP93_DESC_SKCIPHER;
+-	rctx->sa_record_base = ctx->sa_record_base;
+ 
+-	return eip93_skcipher_send_req(async);
++	ret = eip93_skcipher_send_req(async);
++	if (ret != -EINPROGRESS) {
++		dma_unmap_single(ctx->eip93->dev, rctx->sa_record_base,
++				 sizeof(*rctx->sa_record), DMA_TO_DEVICE);
++		kfree(rctx->sa_record);
++		rctx->sa_record = NULL;
++	}
++	return ret;
+ }
+@@ -187,13 +194,10 @@ static int eip93_skcipher_decrypt(struct skcipher_request *req)
+ {
+-	struct eip93_crypto_ctx *ctx = crypto_tfm_ctx(req->base.tfm);
+ 	struct eip93_cipher_reqctx *rctx = skcipher_request_ctx(req);
+ 	struct eip93_alg_template *tmpl = container_of(req->base.tfm->__crt_alg,
+ 				struct eip93_alg_template, alg.skcipher.base);
+ 
+-	ctx->sa_record->sa_cmd0_word |= EIP93_SA_CMD_DIRECTION_IN;
+-
+ 	rctx->flags = tmpl->flags;
+ 	rctx->flags |= EIP93_DECRYPT;
+ 
+ 	return eip93_skcipher_crypt(req, false);
+ }
+--- a/drivers/crypto/inside-secure/eip93/eip93-cipher.h
++++ b/drivers/crypto/inside-secure/eip93/eip93-cipher.h
+@@ -32,4 +32,5 @@ struct eip93_cipher_reqctx {
+ 	unsigned int			authsize;
+ 	dma_addr_t			sa_record_base;
++	struct sa_record		*sa_record;
+ 	struct sa_state			*sa_state;
+ 	dma_addr_t			sa_state_base;
