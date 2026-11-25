@@ -9,7 +9,7 @@ post-read overflow check as a defensive invariant check.
 ---
 --- a/drivers/crypto/inside-secure/eip93/eip93-hash.c
 +++ b/drivers/crypto/inside-secure/eip93/eip93-hash.c
-@@ -302,6 +302,9 @@
+@@ -302,5 +302,8 @@
  	if (offset > SHA256_BLOCK_SIZE || (to_consume && !req->src))
  		return -EINVAL;
  
