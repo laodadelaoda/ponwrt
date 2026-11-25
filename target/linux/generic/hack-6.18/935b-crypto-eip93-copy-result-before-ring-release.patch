@@ -112,17 +112,16 @@ this patch adds dma_rmb() before taking the descriptor snapshot.
  
  		writel(1, eip93->base + EIP93_REG_PE_RD_COUNT);
  		eip93_irq_clear(eip93, EIP93_INT_RDR_THRESH);
-@@ -252,6 +267,13 @@
- 		scoped_guard(spinlock_bh, &eip93->ring->idr_lock) {
- 			async = idr_find(&eip93->ring->crypto_async_idr, crypto_idr);
- 			idr_remove(&eip93->ring->crypto_async_idr, crypto_idr);
-+	}
-+
+@@ -254,6 +269,13 @@
+ 		idr_remove(&eip93->ring->crypto_async_idr, crypto_idr);
+ 	}
+ 
 +	if (unlikely(!async)) {
 +		dev_warn_ratelimited(eip93->dev,
 +				     "missing async request for result ID %u\n",
 +				     crypto_idr);
 +		goto get_more;
- 	}
- 
++	}
++
  	/* Parse error in ctrl stat word */
+ 	err = eip93_parse_ctrl_stat_err(eip93, err);
