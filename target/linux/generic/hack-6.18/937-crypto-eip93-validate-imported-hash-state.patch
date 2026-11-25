@@ -13,7 +13,7 @@ HMAC import must also reject use before a successful setkey, matching init.
 ---
 --- a/drivers/crypto/inside-secure/eip93/eip93-hash.c
 +++ b/drivers/crypto/inside-secure/eip93/eip93-hash.c
-@@ -771,8 +771,24 @@
+@@ -771,7 +771,23 @@
  static int eip93_hash_import(struct ahash_request *req, const void *in)
  {
  	struct eip93_hash_reqctx *rctx = ahash_request_ctx_dma(req);
