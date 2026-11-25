@@ -6,44 +6,7 @@ Use the complete 16-bit descriptor ID space, reject hash request ID allocation
 failures with full DMA unwind, and guard result dispatch against missing
 requests. Order descriptor reads after observing PE_READY.
 
----
---- a/drivers/crypto/inside-secure/eip93/eip93-main.h
-+++ b/drivers/crypto/inside-secure/eip93/eip93-main.h
-@@ -15,1 +15,2 @@ include limits
--#include <linux/interrupt.h>
-+#include <linux/interrupt.h>
-+#include <linux/limits.h>
-@@ -19,1 +20,2 @@ full IDR range
--#define EIP93_RING_NUM			512
-+#define EIP93_RING_NUM			512
-+#define EIP93_REQUEST_IDR_LIMIT		(U16_MAX + 1)
---- a/drivers/crypto/inside-secure/eip93/eip93-common.c
-+++ b/drivers/crypto/inside-secure/eip93/eip93-common.c
-@@ -621,1 +621,1 @@ common full IDR range
--					     EIP93_RING_NUM - 1, GFP_ATOMIC);
-+					     EIP93_REQUEST_IDR_LIMIT, GFP_ATOMIC);
---- a/drivers/crypto/inside-secure/eip93/eip93-hash.c
-+++ b/drivers/crypto/inside-secure/eip93/eip93-hash.c
-@@ -281,1 +281,1 @@ hash IDR limit
--						     EIP93_RING_NUM - 1, GFP_ATOMIC);
-+						     EIP93_REQUEST_IDR_LIMIT, GFP_ATOMIC);
-+		if (crypto_async_idr < 0) {
-+			ret = crypto_async_idr;
-+			if (rctx->sa_record_hmac_mapped) {
-+				dma_unmap_single(eip93->dev, rctx->sa_record_hmac_base,
-+						 sizeof(rctx->sa_record_hmac),
-+						 DMA_TO_DEVICE);
-+				rctx->sa_record_hmac_mapped = false;
-+			}
-+			if (*data_mapped) {
-+				dma_unmap_single(eip93->dev, src_addr, len, DMA_TO_DEVICE);
-+				*data_mapped = false;
-+			}
-+			return ret;
-+		}
-+
-+		cdesc.user_id |= FIELD_PREP(EIP93_PE_USER_ID_CRYPTO_IDR, (u16)crypto_async_idr) |
---- a/drivers/crypto/inside-secure/eip93/eip93-main.c
+------ a/drivers/crypto/inside-secure/eip93/eip93-main.c
 +++ b/drivers/crypto/inside-secure/eip93/eip93-main.c
 @@ -222,6 +222,8 @@ DMA read barrier
 -		} while (FIELD_GET(EIP93_PE_CTRL_PE_READY_DES_TRING_OWN, pe_ctrl_stat) !=
