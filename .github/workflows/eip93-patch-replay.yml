@@ -1,0 +1,215 @@
+name: EIP93 exact kernel patch replay
+
+on:
+  push:
+    branches:
+      - epon1g-nokia-xg-040g-md
+    paths:
+      - .github/workflows/eip93-patch-replay.yml
+      - target/linux/generic/hack-6.18/*eip93*.patch
+      - target/linux/generic/kernel-6.18
+      - target/linux/airoha/Makefile
+      - target/linux/airoha/an7581/config-6.18
+      - configs/an7581.config
+      - configs/release.config
+      - include/kernel.mk
+      - include/kernel-build.mk
+      - include/kernel-defaults.mk
+      - include/kernel-version.mk
+      - target/linux/Makefile
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eip93-patch-replay-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    name: Linux 6.18.60 EIP93 patch replay (no compile)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact PonWrt revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Install OpenWrt preparation dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            asciidoc autoconf automake autopoint binutils bison build-essential \
+            bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk \
+            gettext git g++-multilib gcc-multilib gperf help2man intltool \
+            libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev \
+            libmpfr-dev libncurses-dev libpython3-dev libreadline-dev libssl-dev \
+            libtool libyaml-dev lld llvm ninja-build p7zip-full patch pkgconf \
+            python3 python3-docutils python3-pip python3-ply python3-pyelftools \
+            qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo \
+            uglifyjs unzip wget xmlto xxd zlib1g-dev zstd
+
+      - name: Verify pinned PonWrt feeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$GITHUB_SHA"
+          {
+            echo "PonWrt commit: $actual"
+            echo "Kernel version declaration:"
+            grep -E '^LINUX_VERSION-6\.18 = ' target/linux/generic/kernel-6.18
+            echo "Kernel source hash declaration:"
+            grep -E '^LINUX_KERNEL_HASH-6\.18\.60 = ' target/linux/generic/kernel-6.18
+          } | tee source-revisions.txt
+
+          ./scripts/feeds update -a
+          check_feed() {
+            local name="$1" expected_url="$2" expected_sha="$3"
+            local actual_url actual_sha
+            test -d "feeds/$name/.git"
+            actual_url="$(git -C "feeds/$name" remote get-url origin)"
+            actual_sha="$(git -C "feeds/$name" rev-parse HEAD)"
+            test "$actual_url" = "$expected_url"
+            test "$actual_sha" = "$expected_sha"
+            printf '%s SHA: %s\n%s URL: %s\n' "$name" "$actual_sha" "$name" "$actual_url" | tee -a source-revisions.txt
+          }
+          check_feed pon_drivers https://github.com/laodadelaoda/openwrt-pon-drivers.git e4a43262a7dbf9abe269e5661e81dc302a37d822
+          check_feed pon_userspace https://github.com/laodadelaoda/openwrt-pon-userspace.git a903fcc80f4b89f9b9e59a02d3ba1fc5550819a5
+          ./scripts/feeds install -a
+
+      - name: Derive the Nokia XG-040G-MD kernel configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          selected='CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi'
+          tmp_cfg="$(mktemp)"
+          trap 'rm -f "$tmp_cfg"' EXIT
+          awk -v selected="$selected" '
+            /^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_.*=y$/ {
+              if ($0 == selected "=y") {
+                print
+              } else {
+                sub(/^CONFIG_/, "# CONFIG_")
+                sub(/=y$/, " is not set")
+                print
+              }
+              next
+            }
+            { print }
+          ' configs/an7581.config > "$tmp_cfg"
+
+          grep -qx "${selected}=y" "$tmp_cfg"
+          ./scripts/kconfig.pl + "$tmp_cfg" configs/release.config > .config
+          make defconfig
+
+          grep -qx 'CONFIG_TARGET_airoha=y' .config
+          grep -qx 'CONFIG_TARGET_airoha_an7581=y' .config
+          grep -qx "${selected}=y" .config
+          grep -qx 'CONFIG_PACKAGE_kmod-crypto-hw-eip93=m' .config
+          grep -qx 'CONFIG_CRYPTO_DEV_EIP93=m' target/linux/airoha/an7581/config-6.18
+          ! grep -qx 'CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi-usb-sfp=y' .config
+
+      - name: Replay the native OpenWrt kernel preparation and patch sequence
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > patch-replay.log
+          make target/linux/prepare V=s 2>&1 | tee patch-replay.log
+
+      - name: Verify exact EIP93 patch application and source integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          expected = [
+              "927-crypto-eip93-per-request-sa-record.patch",
+              "928-crypto-eip93-dma-state-and-idr-fix.patch",
+              "929-crypto-eip93-enforce-32bit-dma-mask.patch",
+              "930-crypto-eip93-unwind-sg-copies-on-sync-failure.patch",
+              "931-crypto-eip93-unwind-request-idr-and-state-dma.patch",
+              "932-crypto-eip93-map-sa-state-bidirectionally.patch",
+              "933-crypto-eip93-guard-hash-dma-cleanup.patch",
+              "935-crypto-eip93-reject-hmac-before-setkey.patch",
+              "935a-crypto-eip93-atomic-paired-ring-advance.patch",
+              "935b-crypto-eip93-copy-result-before-ring-release.patch",
+              "936-crypto-eip93-transactional-hash-staging.patch",
+              "937-crypto-eip93-validate-imported-hash-state.patch",
+              "938-crypto-eip93-check-hash-length-overflow-before-staging.patch",
+              "939-crypto-eip93-respect-hash-request-sleepability.patch",
+              "941-crypto-eip93-encode-aead-aad-offset.patch",
+              "942-crypto-eip93-reject-zero-length-hash-final.patch",
+          ]
+          log = Path("patch-replay.log").read_text(errors="replace").splitlines()
+          sections = {}
+          order = []
+          active = None
+          applying = re.compile(r"^Applying .*?/([^/]+\.patch)(?:\s|$)")
+          for line in log:
+              match = applying.search(line)
+              if match:
+                  name = match.group(1)
+                  active = name if name in expected else None
+                  if active:
+                      order.append(active)
+                      sections.setdefault(active, []).append(line)
+                  continue
+              if active:
+                  sections[active].append(line)
+
+          missing = [name for name in expected if name not in sections]
+          duplicates = [name for name in expected if order.count(name) != 1]
+          if missing or duplicates:
+              raise SystemExit(f"EIP93 patch application list mismatch: missing={missing}, duplicate_or_missing_once={duplicates}, seen={order}")
+          if order != expected:
+              raise SystemExit(f"EIP93 patch order mismatch: expected={expected}, actual={order}")
+
+          bad = re.compile(r"with fuzz|offset\s+-?\d+\s+lines?|FAILED|malformed patch|Reversed \(or previously applied\)|can't find file to patch|unexpected end of file", re.I)
+          failures = []
+          for name in expected:
+              body = sections[name]
+              if not any("patching file " in line for line in body):
+                  failures.append(f"{name}: no 'patching file' confirmation")
+              for line in body:
+                  if bad.search(line):
+                      failures.append(f"{name}: {line}")
+          if failures:
+              raise SystemExit("EIP93 patch replay did not meet zero-fuzz/zero-offset criteria:\n" + "\n".join(failures))
+
+          print(f"PASS: all {len(expected)} EIP93 patches applied once, in lexical order, with no fuzz, offset, or reject diagnostics.")
+          print("PATCH_ORDER:")
+          print("\n".join(order))
+          PY
+
+          expected_hash='3c2f44ef6acc021a7ad444d9a2e6ec1ef488ff09368793d0004a6080f69d621e'
+          actual_hash="$(sha256sum dl/linux-6.18.60.tar.xz | awk '{print $1}')"
+          test "$actual_hash" = "$expected_hash"
+          {
+            echo "Linux source archive: linux-6.18.60.tar.xz"
+            echo "Expected SHA256: $expected_hash"
+            echo "Actual SHA256: $actual_hash"
+            echo "Native target: airoha/an7581 / Nokia XG-040G-MD UBI"
+            echo "Patch replay: PASS"
+            echo "Compilation: NOT RUN"
+            echo "Firmware generation: NOT RUN"
+            echo "Hardware verification: NOT RUN"
+          } | tee patch-replay-report.txt
+
+      - name: Upload replay evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: eip93-patch-replay-${{ github.sha }}
+          path: |
+            source-revisions.txt
+            patch-replay.log
+            patch-replay-report.txt
+          if-no-files-found: warn
+          retention-days: 30
