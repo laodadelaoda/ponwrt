@@ -81,6 +81,7 @@ avoids holding an IRQ-safe spinlock while waiting for the packet engine.
  			 FIELD_GET(EIP93_PE_LENGTH_HOST_PE_READY, pe_length) !=
  			 EIP93_PE_LENGTH_PE_READY);
  
+-		err = rdesc->pe_ctrl_stat_word & (EIP93_PE_CTRL_PE_EXT_ERR_CODE |
 +		dma_rmb();
 +		scoped_guard(spinlock_irqsave, &eip93->ring->ring_lock) {
 +			rdesc_ptr = eip93_get_descriptor(eip93);
@@ -113,14 +114,14 @@ avoids holding an IRQ-safe spinlock while waiting for the packet engine.
  		scoped_guard(spinlock_bh, &eip93->ring->idr_lock) {
  			async = idr_find(&eip93->ring->crypto_async_idr, crypto_idr);
  			idr_remove(&eip93->ring->crypto_async_idr, crypto_idr);
- 		}
++	}
 +
-+		if (unlikely(!async)) {
-+			dev_warn_ratelimited(eip93->dev,
-+					     "missing async request for result ID %u\n",
-+					     crypto_idr);
-+			goto get_more;
-+		}
++	if (unlikely(!async)) {
++		dev_warn_ratelimited(eip93->dev,
++				     "missing async request for result ID %u\n",
++				     crypto_idr);
++		goto get_more;
+ 	}
  
- 		/* Parse error in ctrl stat word */
- 		err = eip93_parse_ctrl_stat_err(eip93, err);
+ 	/* Parse error in ctrl stat word */
+ 	err = eip93_parse_ctrl_stat_err(eip93, err);
