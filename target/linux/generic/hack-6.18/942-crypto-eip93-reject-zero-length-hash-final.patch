@@ -10,7 +10,7 @@ inconsistent zero-length final state before mapping or publishing a descriptor.
 ---
 --- a/drivers/crypto/inside-secure/eip93/eip93-hash.c
 +++ b/drivers/crypto/inside-secure/eip93/eip93-hash.c
-@@ -570,9 +570,11 @@
+@@ -570,8 +570,10 @@
  		return 0;
  	}
 
