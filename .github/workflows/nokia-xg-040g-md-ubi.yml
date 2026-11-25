@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - epon1g-nokia-xg-040g-md
-      - eip93-normal-build-integration
     paths:
       - .github/workflows/nokia-xg-040g-md-ubi.yml
       - configs/an7581.config
@@ -202,10 +201,6 @@ jobs:
           package_dir='bin/targets/airoha/an7581/packages'
           mkdir -p output/kmods
 
-          # Every kmod selected as =m is intentionally excluded from the
-          # firmware rootfs and must be distributed from this exact PonWrt
-          # build. Packages selected as =y are already integrated and must
-          # not be duplicated in the standalone bundle.
           mapfile -t standalone_kmods < <(
             sed -nE 's/^CONFIG_PACKAGE_(kmod-[A-Za-z0-9+_.+-]+)=m$/\1/p' .config | sort -u
           )
@@ -236,9 +231,6 @@ jobs:
           : > output/kmods/SHA256SUMS
           missing=0
           for package in "${standalone_kmods[@]}"; do
-            # APK filenames are <exact-package-name>-<numeric-version>-<release>.apk.
-            # Require a digit immediately after the package name so similarly
-            # prefixed packages (e.g. usb-storage-uas) cannot be mistaken for it.
             mapfile -t matches < <(find "$package_dir" -maxdepth 1 -type f -name "${package}-[0-9]*.apk" -print | sort)
             if [ "${#matches[@]}" -ne 1 ] || [ ! -s "${matches[0]:-}" ]; then
               printf 'Expected exactly one non-empty native PonWrt APK for %s; found %s\n' "$package" "${#matches[@]}" >&2
@@ -316,8 +308,6 @@ jobs:
           sysupgrade="$(find_one '*sysupgrade.itb' 'sysupgrade image')"
           preloader="$(find_one '*-preloader.bin' 'Preloader artifact')"
           fip="$(find_one '*-bl31-uboot.fip' 'BL31/U-Boot FIP artifact')"
-          # Inspect only the device-specific U-Boot package build tree.
-          # Host tools and generic U-Boot builds are not the firmware bootloader.
           mapfile -t uboot_configs < <(find build_dir/target-* -type f -path '*/u-boot-an7581_nokia_xg-040g-md/u-boot-*/.config' -print 2>/dev/null)
           if [ "${#uboot_configs[@]}" -ne 1 ]; then
             printf 'Expected exactly one Nokia XG-040G-MD U-Boot config; found %s\n' "${#uboot_configs[@]}" >&2
