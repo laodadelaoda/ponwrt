@@ -69,3 +69,23 @@ the native ring-capacity bound as well.
 This index does not claim that replay, compilation or device testing has
 passed. The current patch edits still require the full ordered replay and
 native build to establish those results.
+
+
+## AN7581 integration outside the patch series
+
+The EIP93 engine itself remains the upstream Linux driver. The platform
+integration is kept in the native PonWrt files rather than duplicated as
+another driver patch:
+
+- `target/linux/airoha/an7581/config-6.18`: `CONFIG_CRYPTO_DEV_EIP93=m`,
+  `CONFIG_CRYPTO_USER_API_AEAD=y` and `CONFIG_CRYPTO_USER_API_SKCIPHER=y`.
+- `package/kernel/linux/modules/crypto.mk`: `kmod-crypto-hw-eip93` depends
+  on the required Crypto API providers and AF_ALG/GCM support.
+- `target/linux/airoha/dts/an7581.dtsi`: the EIP93 node uses the binding's
+  Airoha-specific compatible followed by
+  `inside-secure,safexcel-eip93ies`. The driver matches the generic second
+  compatible, while the first satisfies the AN7581 binding.
+
+The AN7583 DTS node is not changed by the AN7581 binding correction; its
+SoC-specific compatible must be grounded in a corresponding upstream binding
+before changing it.
