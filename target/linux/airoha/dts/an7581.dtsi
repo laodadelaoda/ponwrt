@@ -648,7 +648,7 @@
 		};
 
 		crypto@1fb70000 {
-			compatible = "inside-secure,safexcel-eip93ies";
+			compatible = "airoha,en7581-eip93", "inside-secure,safexcel-eip93ies";
 			reg = <0x0 0x1fb70000 0x0 0x1000>;
 
 			interrupts = <GIC_SPI 44 IRQ_TYPE_LEVEL_HIGH>;
