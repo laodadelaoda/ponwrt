@@ -125,3 +125,4 @@ this patch adds dma_rmb() before taking the descriptor snapshot.
 +
  	/* Parse error in ctrl stat word */
  	err = eip93_parse_ctrl_stat_err(eip93, err);
+ 
