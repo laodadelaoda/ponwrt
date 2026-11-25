@@ -56,7 +56,7 @@ avoids holding an IRQ-safe spinlock while waiting for the packet engine.
  	u16 desc_flags, crypto_idr;
  	bool last_entry;
  	int handled, left, err;
-@@ -208,32 +208,45 @@
+@@ -208,30 +209,44 @@
  
  	while (left) {
  		scoped_guard(spinlock_irqsave, &eip93->ring->ring_lock)
@@ -64,15 +64,13 @@ avoids holding an IRQ-safe spinlock while waiting for the packet engine.
 -		if (IS_ERR(rdesc)) {
 +			rdesc_slot = eip93_peek_descriptor(eip93);
 +		if (IS_ERR(rdesc_slot)) {
- 			dev_err(eip93->dev, "Ndesc: %d nreq: %d\n",
+ 			dev_err(eip93->dev, "Ndesc: %d nreq: %d\\n",
  				handled, left);
 -			err = -EIO;
 -			break;
 +			return;
  		}
--		/* make sure DMA is finished writing */
-+
-+		/* Wait without ring_lock; the unadvanced read pointer pins the slot. */
+ 		/* make sure DMA is finished writing */
  		do {
 -			pe_ctrl_stat = READ_ONCE(rdesc->pe_ctrl_stat_word);
 -			pe_length = READ_ONCE(rdesc->pe_length_word);
@@ -83,7 +81,7 @@ avoids holding an IRQ-safe spinlock while waiting for the packet engine.
  			 FIELD_GET(EIP93_PE_LENGTH_HOST_PE_READY, pe_length) !=
  			 EIP93_PE_LENGTH_PE_READY);
  
- 		dma_rmb();
++		dma_rmb();
 +		scoped_guard(spinlock_irqsave, &eip93->ring->ring_lock) {
 +			rdesc_ptr = eip93_get_descriptor(eip93);
 +			if (IS_ERR(rdesc_ptr) || rdesc_ptr != rdesc_slot) {
@@ -94,11 +92,10 @@ avoids holding an IRQ-safe spinlock while waiting for the packet engine.
 +			}
 +		}
 +		if (err) {
-+			dev_err(eip93->dev, "result ring changed while consuming\n");
++			dev_err(eip93->dev, "result ring changed while consuming\\n");
 +			return;
 +		}
- 
--		err = rdesc->pe_ctrl_stat_word & (EIP93_PE_CTRL_PE_EXT_ERR_CODE |
++
 +		err = rdesc.pe_ctrl_stat_word & (EIP93_PE_CTRL_PE_EXT_ERR_CODE |
  						  EIP93_PE_CTRL_PE_EXT_ERR |
  						  EIP93_PE_CTRL_PE_SEQNUM_ERR |
@@ -112,21 +109,18 @@ avoids holding an IRQ-safe spinlock while waiting for the packet engine.
  
  		writel(1, eip93->base + EIP93_REG_PE_RD_COUNT);
  		eip93_irq_clear(eip93, EIP93_INT_RDR_THRESH);
-
---- a/drivers/crypto/inside-secure/eip93/eip93-main.c
-+++ b/drivers/crypto/inside-secure/eip93/eip93-main.c
-@@ -251,7 +251,14 @@ missing asynchronous request guard
- 	/* Get crypto async ref only for last descriptor */
- 	scoped_guard(spinlock_bh, &eip93->ring->idr_lock) {
- 		async = idr_find(&eip93->ring->crypto_async_idr, crypto_idr);
- 		idr_remove(&eip93->ring->crypto_async_idr, crypto_idr);
- 	}
+@@ -252,6 +267,13 @@
+ 		scoped_guard(spinlock_bh, &eip93->ring->idr_lock) {
+ 			async = idr_find(&eip93->ring->crypto_async_idr, crypto_idr);
+ 			idr_remove(&eip93->ring->crypto_async_idr, crypto_idr);
+ 		}
 +
-+	if (unlikely(!async)) {
-+		dev_warn_ratelimited(eip93->dev,
-+				     "missing async request for result ID %u\n",
-+				     crypto_idr);
-+		goto get_more;
-+	}
++		if (unlikely(!async)) {
++			dev_warn_ratelimited(eip93->dev,
++					     "missing async request for result ID %u\\n",
++					     crypto_idr);
++			goto get_more;
++		}
  
- 	/* Parse error in ctrl stat word */
+ 		/* Parse error in ctrl stat word */
+ 		err = eip93_parse_ctrl_stat_err(eip93, err);
