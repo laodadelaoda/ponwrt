@@ -46,7 +46,7 @@ by the AF_ALG/GCM composition.
 
 IDR allocation is bounded by `EIP93_RING_NUM - 1`, matching the maximum
 number of outstanding entries in the one-slot-empty descriptor ring. The
-obsolete 16-bit-wide IDR expansion was removed from patch 934; patch 936 uses
+The obsolete 16-bit-wide IDR expansion is absent from the current series;
 the native ring-capacity bound as well.
 
 ## Rebase and acceptance requirements
