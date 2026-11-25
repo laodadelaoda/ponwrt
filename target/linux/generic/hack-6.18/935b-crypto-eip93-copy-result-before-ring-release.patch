@@ -64,7 +64,7 @@ avoids holding an IRQ-safe spinlock while waiting for the packet engine.
 -		if (IS_ERR(rdesc)) {
 +			rdesc_slot = eip93_peek_descriptor(eip93);
 +		if (IS_ERR(rdesc_slot)) {
- 			dev_err(eip93->dev, "Ndesc: %d nreq: %d\\n",
+ 			dev_err(eip93->dev, "Ndesc: %d nreq: %d\n",
  				handled, left);
 -			err = -EIO;
 -			break;
@@ -92,7 +92,7 @@ avoids holding an IRQ-safe spinlock while waiting for the packet engine.
 +			}
 +		}
 +		if (err) {
-+			dev_err(eip93->dev, "result ring changed while consuming\\n");
++			dev_err(eip93->dev, "result ring changed while consuming\n");
 +			return;
 +		}
 +
@@ -117,7 +117,7 @@ avoids holding an IRQ-safe spinlock while waiting for the packet engine.
 +
 +		if (unlikely(!async)) {
 +			dev_warn_ratelimited(eip93->dev,
-+					     "missing async request for result ID %u\\n",
++					     "missing async request for result ID %u\n",
 +					     crypto_idr);
 +			goto get_more;
 +		}
