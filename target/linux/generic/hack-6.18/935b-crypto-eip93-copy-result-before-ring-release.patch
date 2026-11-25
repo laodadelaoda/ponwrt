@@ -112,3 +112,21 @@ avoids holding an IRQ-safe spinlock while waiting for the packet engine.
  
  		writel(1, eip93->base + EIP93_REG_PE_RD_COUNT);
  		eip93_irq_clear(eip93, EIP93_INT_RDR_THRESH);
+
+--- a/drivers/crypto/inside-secure/eip93/eip93-main.c
++++ b/drivers/crypto/inside-secure/eip93/eip93-main.c
+@@ -265,7 +265,14 @@ missing asynchronous request guard
+ 	/* Get crypto async ref only for last descriptor */
+ 	scoped_guard(spinlock_bh, &eip93->ring->idr_lock) {
+ 		async = idr_find(&eip93->ring->crypto_async_idr, crypto_idr);
+ 		idr_remove(&eip93->ring->crypto_async_idr, crypto_idr);
+ 	}
++
++	if (unlikely(!async)) {
++		dev_warn_ratelimited(eip93->dev,
++				     "missing async request for result ID %u\\n",
++				     crypto_idr);
++		goto get_more;
++	}
+ 
+ 	/* Parse error in ctrl stat word */
