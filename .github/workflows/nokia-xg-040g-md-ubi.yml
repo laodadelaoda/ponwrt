@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - epon1g-nokia-xg-040g-md
+      - eip93-normal-build-integration
     paths:
       - .github/workflows/nokia-xg-040g-md-ubi.yml
       - configs/an7581.config
@@ -125,6 +126,9 @@ jobs:
 
           active_after="$(grep -E '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_.*=y$' .config || true)"
           test "$active_after" = "${selected}=y"
+          grep -qx 'CONFIG_PACKAGE_kmod-crypto-hw-eip93=m' .config
+          grep -qx 'CONFIG_PACKAGE_kmod-crypto-des=m' .config
+          grep -qx 'CONFIG_PACKAGE_kmod-crypto-md5=m' .config
 
           if grep -q '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi-usb-sfp=y$' .config; then
             echo 'Unexpected USB-SFP device profile enabled' >&2
@@ -136,6 +140,8 @@ jobs:
             echo 'Selected device: nokia_xg-040g-md-ubi'
             echo 'Expected DTS: an7581-nokia_xg-040g-md-ubi'
             echo 'Expected primary image: sysupgrade.itb'
+            echo 'EIP93 kmod: CONFIG_PACKAGE_kmod-crypto-hw-eip93=m'
+            echo 'DES/MD5 providers: standalone kmod packages'
             echo 'Active AN7581 device selectors:'
             printf '%s\n' "$active_after"
           } | tee single-device-config-check.txt
@@ -248,6 +254,33 @@ jobs:
             exit 1
           fi
 
+          check_apk_module() {
+            local package="$1" module="$2"
+            local -a apks=()
+            mapfile -t apks < <(find output/kmods -maxdepth 1 -type f -name "${package}-[0-9]*.apk" -print)
+            if [ "${#apks[@]}" -ne 1 ] || [ ! -s "${apks[0]:-}" ]; then
+              printf 'Expected exactly one APK for %s; found %s\n' "$package" "${#apks[@]}" >&2
+              exit 1
+            fi
+            test -x staging_dir/host/bin/apk
+            extract_dir="$(mktemp -d)"
+            if ! staging_dir/host/bin/apk extract --allow-untrusted --destination "$extract_dir" "${apks[0]}"; then
+              rm -rf "$extract_dir"
+              echo "Host apk-tools could not extract $package" >&2
+              exit 1
+            fi
+            if ! find "$extract_dir" -type f -name "$module" -print -quit | grep -q .; then
+              rm -rf "$extract_dir"
+              echo "Standalone APK $package does not contain $module" >&2
+              exit 1
+            fi
+            rm -rf "$extract_dir"
+            echo "PASS: $package contains $module"
+          }
+          check_apk_module kmod-crypto-hw-eip93 crypto-hw-eip93.ko
+          check_apk_module kmod-crypto-des libdes.ko
+          check_apk_module kmod-crypto-md5 libmd5.ko
+
           (
             cd output/kmods
             find . -maxdepth 1 -type f -name '*.apk' -print0 | sort -z | xargs -0 -r sha256sum
@@ -306,6 +339,22 @@ jobs:
             exit 1
           fi
           grep -qx 'CONFIG_RANDOMIZE_BASE=y' "${kernel_configs[0]}"
+          grep -qx 'CONFIG_CRYPTO_DEV_EIP93=m' "${kernel_configs[0]}"
+          grep -qx 'CONFIG_CRYPTO_DES=m' "${kernel_configs[0]}"
+          grep -qx 'CONFIG_CRYPTO_MD5=m' "${kernel_configs[0]}"
+          kernel_dir="${kernel_configs[0]%/.config}"
+          test -s "$kernel_dir/drivers/crypto/inside-secure/eip93/crypto-hw-eip93.ko"
+          test -s "$kernel_dir/lib/crypto/libdes.ko"
+          test -s "$kernel_dir/lib/crypto/libmd5.ko"
+          eip93_module="$kernel_dir/drivers/crypto/inside-secure/eip93/crypto-hw-eip93.ko"
+          eip93_deps="$(modinfo -F depends "$eip93_module")"
+          printf '%s\\n' "$eip93_deps" | tee eip93-module-dependencies.txt
+          for provider in libdes md5; do
+            case ",$eip93_deps," in
+              *",$provider,"*) ;;
+              *) echo "EIP93 module missing runtime dependency $provider: $eip93_deps" >&2; exit 1 ;;
+            esac
+          done
           mkdir -p output
           install -m 0644 "$sysupgrade" output/nokia_xg-040g-md-ubi-sysupgrade.itb
           install -m 0644 "$fip" output/bl31-uboot.fip
@@ -336,7 +385,7 @@ jobs:
 
       - name: Upload firmware
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ponwrt-nokia-xg-040g-md-ubi-sysupgrade
           path: output/*
@@ -345,7 +394,7 @@ jobs:
 
       - name: Upload build diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ponwrt-nokia-xg-040g-md-ubi-build-diagnostics
           path: |
@@ -357,6 +406,7 @@ jobs:
             output/kmods/BUILD-INFO.txt
             output/kmods/SHA256SUMS
             output/BUILD-INFO.txt
+            eip93-module-dependencies.txt
             build.log
           if-no-files-found: ignore
           retention-days: 14

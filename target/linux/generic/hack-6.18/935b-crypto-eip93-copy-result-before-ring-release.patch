@@ -1,0 +1,114 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: PonWrt Maintainers <ponwrt@example.invalid>
+Subject: [PATCH] crypto: eip93: copy result before releasing ring slot
+
+Peek the paired result slot without advancing the read pointers. The single
+completion tasklet waits for PE_READY without holding ring_lock, then copies
+the complete descriptor and advances both read pointers under ring_lock.
+This keeps producers from reusing the slot before the result is copied and
+avoids holding an IRQ-safe spinlock while waiting for the packet engine.
+
+---
+--- a/drivers/crypto/inside-secure/eip93/eip93-common.c
++++ b/drivers/crypto/inside-secure/eip93/eip93-common.c
+@@ -105,6 +105,22 @@
+ 		ring->read += ring->offset;
+ }
+ 
++void *eip93_peek_descriptor(struct eip93_device *eip93)
++{
++	struct eip93_descriptor *cdesc;
++	void *ptr;
++
++	cdesc = eip93_ring_peek_rptr(&eip93->ring->cdr);
++	if (IS_ERR(cdesc))
++		return ERR_PTR(-ENOENT);
++
++	ptr = eip93_ring_peek_rptr(&eip93->ring->rdr);
++	if (IS_ERR(ptr))
++		return ERR_PTR(-ENOENT);
++
++	return ptr;
++}
++
+ int eip93_put_descriptor(struct eip93_device *eip93,
+ 			 struct eip93_descriptor *desc)
+ {
+--- a/drivers/crypto/inside-secure/eip93/eip93-common.h
++++ b/drivers/crypto/inside-secure/eip93/eip93-common.h
+@@ -9,6 +9,7 @@
+ #ifndef _EIP93_COMMON_H_
+ #define _EIP93_COMMON_H_
+ 
++void *eip93_peek_descriptor(struct eip93_device *eip93);
+ void *eip93_get_descriptor(struct eip93_device *eip93);
+ int eip93_put_descriptor(struct eip93_device *eip93, struct eip93_descriptor *desc);
+ 
+--- a/drivers/crypto/inside-secure/eip93/eip93-main.c
++++ b/drivers/crypto/inside-secure/eip93/eip93-main.c
+@@ -186,7 +186,8 @@
+ static void eip93_handle_result_descriptor(struct eip93_device *eip93)
+ {
+ 	struct crypto_async_request *async;
+-	struct eip93_descriptor *rdesc;
++	struct eip93_descriptor *rdesc_ptr, *rdesc_slot;
++	struct eip93_descriptor rdesc;
+ 	u16 desc_flags, crypto_idr;
+ 	bool last_entry;
+ 	int handled, left, err;
+@@ -208,32 +208,45 @@
+ 
+ 	while (left) {
+ 		scoped_guard(spinlock_irqsave, &eip93->ring->ring_lock)
+-			rdesc = eip93_get_descriptor(eip93);
+-		if (IS_ERR(rdesc)) {
++			rdesc_slot = eip93_peek_descriptor(eip93);
++		if (IS_ERR(rdesc_slot)) {
+ 			dev_err(eip93->dev, "Ndesc: %d nreq: %d\n",
+ 				handled, left);
+-			err = -EIO;
+-			break;
++			return;
+ 		}
+-		/* make sure DMA is finished writing */
++
++		/* Wait without ring_lock; the unadvanced read pointer pins the slot. */
+ 		do {
+-			pe_ctrl_stat = READ_ONCE(rdesc->pe_ctrl_stat_word);
+-			pe_length = READ_ONCE(rdesc->pe_length_word);
++			pe_ctrl_stat = READ_ONCE(rdesc_slot->pe_ctrl_stat_word);
++			pe_length = READ_ONCE(rdesc_slot->pe_length_word);
+ 		} while (FIELD_GET(EIP93_PE_CTRL_PE_READY_DES_TRING_OWN, pe_ctrl_stat) !=
+ 			 EIP93_PE_CTRL_PE_READY ||
+ 			 FIELD_GET(EIP93_PE_LENGTH_HOST_PE_READY, pe_length) !=
+ 			 EIP93_PE_LENGTH_PE_READY);
+ 
+ 		dma_rmb();
++		scoped_guard(spinlock_irqsave, &eip93->ring->ring_lock) {
++			rdesc_ptr = eip93_get_descriptor(eip93);
++			if (IS_ERR(rdesc_ptr) || rdesc_ptr != rdesc_slot) {
++				err = -EIO;
++			} else {
++				rdesc = *rdesc_ptr;
++				err = 0;
++			}
++		}
++		if (err) {
++			dev_err(eip93->dev, "result ring changed while consuming\n");
++			return;
++		}
+ 
+-		err = rdesc->pe_ctrl_stat_word & (EIP93_PE_CTRL_PE_EXT_ERR_CODE |
++		err = rdesc.pe_ctrl_stat_word & (EIP93_PE_CTRL_PE_EXT_ERR_CODE |
+ 						  EIP93_PE_CTRL_PE_EXT_ERR |
+ 						  EIP93_PE_CTRL_PE_SEQNUM_ERR |
+ 						  EIP93_PE_CTRL_PE_PAD_ERR |
+ 						  EIP93_PE_CTRL_PE_AUTH_ERR);
+ 
+-		desc_flags = FIELD_GET(EIP93_PE_USER_ID_DESC_FLAGS, rdesc->user_id);
+-		crypto_idr = FIELD_GET(EIP93_PE_USER_ID_CRYPTO_IDR, rdesc->user_id);
++		desc_flags = FIELD_GET(EIP93_PE_USER_ID_DESC_FLAGS, rdesc.user_id);
++		crypto_idr = FIELD_GET(EIP93_PE_USER_ID_CRYPTO_IDR, rdesc.user_id);
+ 
+ 		writel(1, eip93->base + EIP93_REG_PE_RD_COUNT);
+ 		eip93_irq_clear(eip93, EIP93_INT_RDR_THRESH);

@@ -562,9 +562,7 @@ define KernelPackage/crypto-hw-eip93
 	+kmod-crypto-user
   KCONFIG:= \
 	CONFIG_CRYPTO_HW=y \
-	CONFIG_CRYPTO_DEV_EIP93 \
-	CONFIG_CRYPTO_DEV_EIP93_GENERIC_SW_MAX_LEN=256 \
-	CONFIG_CRYPTO_DEV_EIP93_AES_128_SW_MAX_LEN=512
+	CONFIG_CRYPTO_DEV_EIP93
   FILES:=$(LINUX_DIR)/drivers/crypto/inside-secure/eip93/crypto-hw-eip93.ko
   AUTOLOAD:=$(call AutoLoad,08,crypto-hw-eip93)
   $(call AddDepends/crypto)

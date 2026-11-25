@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: PonWrt Maintainers <ponwrt@example.invalid>
+Subject: [PATCH] crypto: eip93: track cipher SA-state DMA mapping ownership
+
+Track successful mappings independently from DMA addresses. Preserve the
+DMA_BIDIRECTIONAL direction and the IDR unwind already established by 928.
+Do not unmap state buffers when their mapping operation failed.
+
+---
+--- a/drivers/crypto/inside-secure/eip93/eip93-common.c
++++ b/drivers/crypto/inside-secure/eip93/eip93-common.c
+@@ -539,6 +539,8 @@ int eip93_send_req(struct crypto_async_request *async,
+ 	u32 start, end, ctr, blocks;
+ 	u32 iv[AES_BLOCK_SIZE / sizeof(u32)];
+ 	int crypto_async_idr = -1;
++	bool sa_state_ctr_mapped = false;
++	bool sa_state_mapped = false;
+ 
+ 	rctx->sa_state_ctr = NULL;
+ 	rctx->sa_state = NULL;
+@@ -598,0 +601,1 @@
++			sa_state_ctr_mapped = true;
+@@ -608,0 +612,1 @@
++	sa_state_mapped = true;
+@@ -657,9 +661,9 @@ synchronous DMA unwind
+ free_sa_state_dma:
+-	if (rctx->sa_state)
++	if (rctx->sa_state && sa_state_mapped)
+ 		dma_unmap_single(eip93->dev, rctx->sa_state_base,
+ 				 sizeof(*rctx->sa_state), DMA_BIDIRECTIONAL);
+ free_sa_state_ctr_dma:
+-	if (rctx->sa_state_ctr)
++	if (rctx->sa_state_ctr && sa_state_ctr_mapped)
+ 		dma_unmap_single(eip93->dev, rctx->sa_state_ctr_base,
+ 				 sizeof(*rctx->sa_state_ctr),
+ 				 DMA_BIDIRECTIONAL);
