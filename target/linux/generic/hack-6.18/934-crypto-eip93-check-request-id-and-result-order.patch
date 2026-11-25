@@ -1,12 +1,12 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: PonWrt Maintainers <ponwrt@example.invalid>
-Subject: [PATCH] crypto: eip93: validate request IDs and result ownership
+Subject: [PATCH] crypto: eip93: order DMA result reads and guard request lookup
 
-Use the complete 16-bit descriptor ID space, reject hash request ID allocation
-failures with full DMA unwind, and guard result dispatch against missing
-requests. Order descriptor reads after observing PE_READY.
+Order descriptor reads after observing PE_READY and guard result dispatch
+against a missing asynchronous request ID.
 
------- a/drivers/crypto/inside-secure/eip93/eip93-main.c
+---
+--- a/drivers/crypto/inside-secure/eip93/eip93-main.c
 +++ b/drivers/crypto/inside-secure/eip93/eip93-main.c
 @@ -222,6 +222,8 @@ DMA read barrier
 -		} while (FIELD_GET(EIP93_PE_CTRL_PE_READY_DES_TRING_OWN, pe_ctrl_stat) !=
