@@ -119,7 +119,19 @@ jobs:
         run: |
           set -euo pipefail
           : > patch-replay.log
+          set +e
           make target/linux/prepare V=s 2>&1 | tee patch-replay.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            mapfile -t kernel_dirs < <(find build_dir -type d -name 'linux-6.18.60' -print)
+            if [ "${#kernel_dirs[@]}" -eq 1 ]; then
+              tar -czf eip93-replay-failure-context.tar.gz -C "${kernel_dirs[0]}" drivers/crypto/inside-secure/eip93
+            else
+              printf 'Expected one extracted Linux 6.18.60 tree; found %s\n' "${#kernel_dirs[@]}" >&2
+            fi
+            exit "$status"
+          fi
 
       - name: Verify exact EIP93 patch application and source integrity
         shell: bash
@@ -211,5 +223,6 @@ jobs:
             source-revisions.txt
             patch-replay.log
             patch-replay-report.txt
+            eip93-replay-failure-context.tar.gz
           if-no-files-found: warn
           retention-days: 30
