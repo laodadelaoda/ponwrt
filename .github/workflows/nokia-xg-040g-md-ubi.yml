@@ -6,7 +6,6 @@ on:
     branches:
       - epon1g-nokia-xg-040g-md
     paths:
-      - .github/workflows/nokia-xg-040g-md-ubi.yml
       - configs/an7581.config
       - configs/release.config
       - feeds.conf.default
@@ -145,11 +144,85 @@ jobs:
             printf '%s\n' "$active_after"
           } | tee single-device-config-check.txt
 
-      - name: Download sources
+      - name: EIP93 exact patch replay gate before compilation
         shell: bash
         run: |
-          set -o pipefail
-          make download -j"$(nproc)" 2>&1 | tee download.log
+          set -euo pipefail
+          make target/linux/prepare V=s 2>&1 | tee eip93-patch-replay.log
+
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          expected = [
+              "927-crypto-eip93-per-request-sa-record.patch",
+              "928-crypto-eip93-dma-state-and-idr-fix.patch",
+              "929-crypto-eip93-enforce-32bit-dma-mask.patch",
+              "930-crypto-eip93-unwind-sg-copies-on-sync-failure.patch",
+              "931-crypto-eip93-unwind-request-idr-and-state-dma.patch",
+              "932-crypto-eip93-map-sa-state-bidirectionally.patch",
+              "933-crypto-eip93-guard-hash-dma-cleanup.patch",
+              "935-crypto-eip93-reject-hmac-before-setkey.patch",
+              "935a-crypto-eip93-atomic-paired-ring-advance.patch",
+              "935b-crypto-eip93-copy-result-before-ring-release.patch",
+              "936-crypto-eip93-transactional-hash-staging.patch",
+              "937-crypto-eip93-validate-imported-hash-state.patch",
+              "938-crypto-eip93-check-hash-length-overflow-before-staging.patch",
+              "939-crypto-eip93-respect-hash-request-sleepability.patch",
+              "941-crypto-eip93-encode-aead-aad-offset.patch",
+              "942-crypto-eip93-reject-zero-length-hash-final.patch",
+          ]
+          lines = Path("eip93-patch-replay.log").read_text(errors="replace").splitlines()
+          sections, order, active = {}, [], None
+          applying = re.compile(r"^Applying .*?/([^/]+\.patch)(?:\s|$)")
+          for line in lines:
+              match = applying.search(line)
+              if match:
+                  name = match.group(1)
+                  active = name if name in expected else None
+                  if active:
+                      order.append(active)
+                      sections.setdefault(active, []).append(line)
+                  continue
+              if active:
+                  sections[active].append(line)
+
+          missing = [name for name in expected if name not in sections]
+          duplicates = [name for name in expected if order.count(name) != 1]
+          if missing or duplicates or order != expected:
+              raise SystemExit(
+                  f"EIP93 patch order/application mismatch: missing={missing}, "
+                  f"duplicates={duplicates}, actual_order={order}"
+              )
+
+          bad = re.compile(
+              r"with fuzz|offset\s+-?\d+\s+lines?|FAILED|malformed patch|"
+              r"Reversed \(or previously applied\)|can't find file to patch|"
+              r"unexpected end of file",
+              re.I,
+          )
+          errors = []
+          for name in expected:
+              body = sections[name]
+              if not any("patching file " in line for line in body):
+                  errors.append(f"{name}: no patching-file confirmation")
+              errors.extend(f"{name}: {line}" for line in body if bad.search(line))
+          if errors:
+              raise SystemExit(
+                  "EIP93 patch replay failed zero-fuzz/zero-offset gate:\n"
+                  + "\n".join(errors)
+              )
+          print(f"PASS: all {len(expected)} EIP93 patches applied once in order, zero fuzz/offset/reject.")
+          PY
+
+          expected_hash='3c2f44ef6acc021a7ad444d9a2e6ec1ef488ff09368793d0004a6080f69d621e'
+          actual_hash="$(sha256sum dl/linux-6.18.60.tar.xz | awk '{print $1}')"
+          test "$actual_hash" = "$expected_hash"
+          {
+            echo "Linux 6.18.60 source archive SHA256: $actual_hash"
+            echo "EIP93 native patch replay: PASS"
+            echo "Compilation starts only after this gate."
+          } | tee eip93-patch-replay-report.txt
 
       - name: Build firmware
         shell: bash
@@ -391,6 +464,8 @@ jobs:
             source-revisions.txt
             single-device-config-check.txt
             download.log
+            eip93-patch-replay.log
+            eip93-patch-replay-report.txt
             ponwrt-en7572-firmware-integration.txt
             ponwrt-kmod-build-info.txt
             output/kmods/BUILD-INFO.txt

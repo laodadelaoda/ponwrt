@@ -7,6 +7,8 @@ completion tasklet waits for PE_READY without holding ring_lock, then copies
 the complete descriptor and advances both read pointers under ring_lock.
 This keeps producers from reusing the slot before the result is copied and
 avoids holding an IRQ-safe spinlock while waiting for the packet engine.
+The Linux 6.18.60 baseline has no DMA read barrier after PE_READY polling;
+this patch adds dma_rmb() before taking the descriptor snapshot.
 
 ---
 --- a/drivers/crypto/inside-secure/eip93/eip93-common.c
