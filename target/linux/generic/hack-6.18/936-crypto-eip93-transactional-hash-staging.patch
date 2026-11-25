@@ -916,7 +916,7 @@ remains after the first descriptor is visible.
 +	scoped_guard(spinlock_bh, &eip93->ring->idr_lock)
 +		crypto_async_idr = idr_alloc(&eip93->ring->crypto_async_idr,
 +					     &req->base, 0,
-+					     EIP93_REQUEST_IDR_LIMIT,
++					     EIP93_RING_NUM - 1,
 +					     GFP_ATOMIC);
 +	if (crypto_async_idr < 0) {
 +		ret = crypto_async_idr;
