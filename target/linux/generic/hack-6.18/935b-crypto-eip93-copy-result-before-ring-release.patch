@@ -124,7 +124,7 @@ avoids holding an IRQ-safe spinlock while waiting for the packet engine.
 +
 +	if (unlikely(!async)) {
 +		dev_warn_ratelimited(eip93->dev,
-+				     "missing async request for result ID %u\\n",
++				     "missing async request for result ID %u\n",
 +				     crypto_idr);
 +		goto get_more;
 +	}
