@@ -18,28 +18,27 @@ OpenWrt kernel patch application.
 | 5 | `931-crypto-eip93-unwind-request-idr-and-state-dma.patch` | Track successful cipher state DMA mappings before unmapping |
 | 6 | `932-crypto-eip93-map-sa-state-bidirectionally.patch` | Use bidirectional DMA mapping for mutable hash state |
 | 7 | `933-crypto-eip93-guard-hash-dma-cleanup.patch` | Track hash data, SA and state mapping ownership |
-| 8 | `934-crypto-eip93-check-request-id-and-result-order.patch` | DMA read barrier and missing async-request guard in result dispatch |
-| 9 | `935-crypto-eip93-reject-hmac-before-setkey.patch` | Reject HMAC init/import before a successful setkey |
-| 10 | `935a-crypto-eip93-atomic-paired-ring-advance.patch` | Keep command/result ring pointer advancement paired under one lock |
-| 11 | `935b-crypto-eip93-copy-result-before-ring-release.patch` | Pin result slot until descriptor contents have been copied |
-| 12 | `936-crypto-eip93-transactional-hash-staging.patch` | Stage hash input, map resources and reserve IDR before descriptor publication |
-| 13 | `937-crypto-eip93-validate-imported-hash-state.patch` | Validate imported hash tail length and HMAC key state |
-| 14 | `938-crypto-eip93-check-hash-length-overflow-before-staging.patch` | Reject hash byte-count overflow before staging allocations |
-| 15 | `939-crypto-eip93-respect-hash-request-sleepability.patch` | Prevent sleeping or partial publication for non-sleepable requests |
-| 16 | `941-crypto-eip93-encode-aead-aad-offset.patch` | Encode aligned/unaligned AAD offsets without truncation |
-| 17 | `942-crypto-eip93-reject-zero-length-hash-final.patch` | Reject an inconsistent zero-length final descriptor |
+| 8 | `935-crypto-eip93-reject-hmac-before-setkey.patch` | Reject HMAC init/import before a successful setkey |
+| 9 | `935a-crypto-eip93-atomic-paired-ring-advance.patch` | Keep command/result ring pointer advancement paired under one lock |
+| 10 | `935b-crypto-eip93-copy-result-before-ring-release.patch` | Pin result slot until descriptor contents have been copied; DMA read barrier and missing async-request guard |
+| 11 | `936-crypto-eip93-transactional-hash-staging.patch` | Stage hash input, map resources and reserve IDR before descriptor publication |
+| 12 | `937-crypto-eip93-validate-imported-hash-state.patch` | Validate imported hash tail length and HMAC key state |
+| 13 | `938-crypto-eip93-check-hash-length-overflow-before-staging.patch` | Reject hash byte-count overflow before staging allocations |
+| 14 | `939-crypto-eip93-respect-hash-request-sleepability.patch` | Prevent sleeping or partial publication for non-sleepable requests |
+| 15 | `941-crypto-eip93-encode-aead-aad-offset.patch` | Encode aligned/unaligned AAD offsets without truncation |
+| 16 | `942-crypto-eip93-reject-zero-length-hash-final.patch` | Reject an inconsistent zero-length final descriptor |
 
-The missing sequence numbers are intentional: patch 926 was removed when the
-small-request software-fallback change was dropped; patch 940 is not part of
-the current series. Do not recreate either file merely to make numbering
-contiguous. The current design keeps AES-CTR available to the EIP93 path used
+The missing sequence numbers are intentional: patch 926 (small-request
+software fallback), 934 (a malformed duplicate result guard superseded by
+935b), and 940 are not part of the current series. Do not recreate these files
+merely to make numbering contiguous. The current design keeps AES-CTR available to the EIP93 path used
 by the AF_ALG/GCM composition.
 
 ## Dependency groups
 
 - **Request and DMA lifetime:** 927–933. Keep this order; later patches rely
   on the request-local SA and mapping-ownership fields.
-- **Completion and ring ownership:** 934, 935a, 935b. The paired-ring lock
+- **Completion and ring ownership:** 935a, 935b. The paired-ring lock
   and pinned result-slot design must be reviewed together.
 - **Hash/HMAC transaction:** 935, 936–939, 942. Patch 936 replaces the
   earlier hash submission path and owns hash request ID allocation/unwind.
