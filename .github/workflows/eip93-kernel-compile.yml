@@ -1,0 +1,221 @@
+name: EIP93 kernel driver compile gate
+
+on:
+  push:
+    branches:
+      - eip93-prebuild-audit-fixes
+    paths:
+      - 'target/linux/generic/hack-6.18/*eip93*.patch'
+      - 'package/kernel/linux/modules/crypto.mk'
+      - 'target/linux/airoha/an7581/config-6.18'
+      - 'target/linux/airoha/dts/an7581.dtsi'
+      - '.github/workflows/eip93-kernel-compile.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: eip93-kernel-compile-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    name: Linux 6.18.60 EIP93 module compile
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout PonWrt source and patch stack
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          path: ponwrt
+
+      - name: Checkout exact Linux kernel baseline
+        uses: actions/checkout@v5
+        with:
+          repository: gregkh/linux
+          ref: v6.18.60
+          path: linux
+          fetch-depth: 1
+
+      - name: Install arm64 kernel build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential flex gcc-aarch64-linux-gnu kmod libelf-dev libssl-dev
+
+      - name: Apply EIP93 patch series with GNU patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch --version | head -n 1 | grep -q 'GNU patch'
+          test "$(git -C linux describe --tags --exact-match HEAD)" = "v6.18.60"
+
+          patches=(
+            927-crypto-eip93-per-request-sa-record.patch
+            928-crypto-eip93-dma-state-and-idr-fix.patch
+            929-crypto-eip93-enforce-32bit-dma-mask.patch
+            930-crypto-eip93-unwind-sg-copies-on-sync-failure.patch
+            931-crypto-eip93-unwind-request-idr-and-state-dma.patch
+            932-crypto-eip93-map-sa-state-bidirectionally.patch
+            933-crypto-eip93-guard-hash-dma-cleanup.patch
+            934-crypto-eip93-check-request-id-and-result-order.patch
+            935-crypto-eip93-reject-hmac-before-setkey.patch
+            935a-crypto-eip93-atomic-paired-ring-advance.patch
+            935b-crypto-eip93-copy-result-before-ring-release.patch
+            936-crypto-eip93-transactional-hash-staging.patch
+            937-crypto-eip93-validate-imported-hash-state.patch
+            938-crypto-eip93-check-hash-length-overflow-before-staging.patch
+            939-crypto-eip93-respect-hash-request-sleepability.patch
+            941-crypto-eip93-encode-aead-aad-offset.patch
+            942-crypto-eip93-reject-zero-length-hash-final.patch
+          )
+
+          mkdir -p reports
+          : > reports/patch-replay.log
+          for name in "${patches[@]}"; do
+            file="ponwrt/target/linux/generic/hack-6.18/$name"
+            test -s "$file"
+            echo "=== $name ===" | tee -a reports/patch-replay.log
+            sha256sum "$file" | tee -a reports/patch-replay.log
+            output="$(patch --verbose --batch --forward --fuzz=0 -p1 -d linux < "$file" 2>&1)" || {
+              printf '%s\n' "$output" | tee -a reports/patch-replay.log
+              exit 1
+            }
+            printf '%s\n' "$output" | tee -a reports/patch-replay.log
+            if printf '%s\n' "$output" | grep -Eiq '\(offset -?[1-9][0-9]* lines?\)|with fuzz [1-9][0-9]*|Hunk #[0-9]+ FAILED|malformed patch|reversed patch|skipping patch'; then
+              echo "FAIL: non-zero offset/fuzz or rejected hunk in $name" | tee -a reports/patch-replay.log
+              exit 1
+            fi
+            if find linux -type f -name '*.rej' -print -quit | grep -q .; then
+              echo "FAIL: reject file after $name" | tee -a reports/patch-replay.log
+              exit 1
+            fi
+            echo "PASS: $name" | tee -a reports/patch-replay.log
+          done
+          git -C linux diff --check
+
+      - name: Validate OpenWrt EIP93 package metadata
+        working-directory: ponwrt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          text = Path("package/kernel/linux/modules/crypto.mk").read_text()
+          block = text.split("define KernelPackage/crypto-hw-eip93", 1)[1].split("\nendef", 1)[0]
+          lines = block.splitlines()
+          idx = next(i for i, line in enumerate(lines)
+                     if line.strip() == "CONFIG_CRYPTO_DEV_EIP93")
+          assert not lines[idx].rstrip().endswith("\\"), "KCONFIG unexpectedly continues into FILES"
+          assert lines[idx + 1].strip().startswith("FILES:="), "EIP93 FILES assignment is not a separate make variable"
+          assert "crypto-hw-eip93.ko" in lines[idx + 1], "EIP93 module path mismatch"
+          assert any(line.strip().startswith("AUTOLOAD:=") for line in lines[idx + 2:]), "EIP93 AUTOLOAD missing"
+          print("PASS: KCONFIG, FILES and AUTOLOAD are separate package variables")
+          PY
+
+      - name: Configure exact Airoha-capable arm64 kernel for module build
+        working-directory: linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+          ./scripts/config --enable ARCH_AIROHA
+          ./scripts/config --enable NET
+          ./scripts/config --enable CRYPTO
+          ./scripts/config --enable CRYPTO_HW
+          # Select the visible Crypto API consumers. They select the hidden
+          # CRYPTO_LIB_* providers; setting hidden provider symbols directly
+          # with scripts/config is discarded by Kconfig.
+          ./scripts/config --module CRYPTO_DES
+          ./scripts/config --module CRYPTO_MD5
+          ./scripts/config --module CRYPTO_DEV_EIP93
+          ./scripts/config --enable CRYPTO_USER_API_AEAD
+          ./scripts/config --enable CRYPTO_USER_API_SKCIPHER
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+
+          grep -qx 'CONFIG_ARCH_AIROHA=y' .config
+          grep -qx 'CONFIG_CRYPTO_DES=m' .config
+          grep -qx 'CONFIG_CRYPTO_LIB_DES=m' .config
+          grep -qx 'CONFIG_CRYPTO_MD5=m' .config
+          grep -qx 'CONFIG_CRYPTO_LIB_MD5=m' .config
+          grep -qx 'CONFIG_CRYPTO_DEV_EIP93=m' .config
+          grep -qx 'CONFIG_CRYPTO_USER_API_AEAD=y' .config
+          grep -qx 'CONFIG_CRYPTO_USER_API_SKCIPHER=y' .config
+          cp .config ../reports/eip93-module.config
+
+      - name: Build kernel symbol table for module modpost
+        working-directory: linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- vmlinux 2>&1 | tee ../reports/vmlinux-build.log
+          # A vmlinux-only build emits vmlinux.symvers. External-module
+          # modpost consumes the built-in export table through Module.symvers.
+          test -s vmlinux.symvers
+          cp vmlinux.symvers Module.symvers
+          test -s Module.symvers
+          sha256sum vmlinux.symvers Module.symvers | tee -a ../reports/vmlinux-build.log
+
+      - name: Build DES/MD5 providers and EIP93 as kernel modules
+        working-directory: linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -qx 'CONFIG_CRYPTO_DES=m' .config
+          grep -qx 'CONFIG_CRYPTO_LIB_DES=m' .config
+          grep -qx 'CONFIG_CRYPTO_MD5=m' .config
+          grep -qx 'CONFIG_CRYPTO_LIB_MD5=m' .config
+          grep -qx 'CONFIG_CRYPTO_DEV_EIP93=m' .config
+
+          # Build the in-tree provider modules first. Their exported symbols
+          # must be present in the real Module.symvers consumed by EIP93 modpost.
+          make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules 2>&1 | tee ../reports/eip93-module-build.log
+          test -s Module.symvers
+          test -s lib/crypto/libdes.ko
+          test -s lib/crypto/libmd5.ko
+
+          for symbol in des_expand_key md5_init md5_update md5_final md5 \
+                        hmac_md5_preparekey hmac_md5_init hmac_md5_final hmac_md5; do
+            grep -qw "$symbol" Module.symvers || {
+              echo "Missing DES/MD5 provider export: $symbol" >&2
+              grep -E '(^|[[:space:]])(md5|hmac_md5|des_expand_key)' Module.symvers || true
+              exit 1
+            }
+          done
+          echo "PASS: DES/MD5 module providers export every EIP93 dependency" | tee ../reports/crypto-providers.log
+
+          eip93_module=drivers/crypto/inside-secure/eip93/crypto-hw-eip93.ko
+          test -s "$eip93_module"
+          deps="$(modinfo -F depends "$eip93_module")"
+          printf '%s\n' "$deps" | tee ../reports/eip93-module-dependencies.txt
+          # modinfo reports the MD5 runtime dependency as "md5" for this
+          # kernel build. The libmd5.ko object and its exported symbols are
+          # checked independently above; do not confuse the object path
+          # with the runtime dependency name.
+          for provider in libdes md5; do
+            case ",$deps," in
+              *",$provider,"*) ;;
+              *)
+                echo "EIP93 module is missing runtime dependency on $provider (depends: $deps)" >&2
+                exit 1
+                ;;
+            esac
+          done
+          file "$eip93_module" | tee ../reports/eip93-module-file.txt
+      - name: Upload compile evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: eip93-linux-6.18.60-module-compile
+          path: |
+            reports/patch-replay.log
+            reports/eip93-module.config
+            reports/vmlinux-build.log
+            linux/Module.symvers
+            reports/crypto-providers.log
+            reports/eip93-module-build.log
+            reports/eip93-module-file.txt
+            reports/eip93-module-dependencies.txt
+            linux/drivers/crypto/inside-secure/eip93/crypto-hw-eip93.ko
+          if-no-files-found: error

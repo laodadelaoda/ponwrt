@@ -19,26 +19,25 @@ and unwind the IDR entry and DMA mappings on later synchronous failures.
  
  	rctx->sa_state_ctr = NULL;
  	rctx->sa_state = NULL;
-@@ -574,6 +574,8 @@ int eip93_send_req(struct crypto_async_request *async,
- 			rctx->sa_state_ctr_base = dma_map_single(eip93->dev, rctx->sa_state_ctr,
- 								 sizeof(*rctx->sa_state_ctr),
+@@ -576,1 +576,1 @@
 -								 DMA_TO_DEVICE);
 +								 DMA_BIDIRECTIONAL);
- 			err = dma_mapping_error(eip93->dev, rctx->sa_state_ctr_base);
+@@ -578,2 +578,4 @@
 -			if (err)
+-				goto free_sa_state_ctr;
 +			if (err) {
 +				err = -ENOMEM;
- 				goto free_sa_state_ctr;
++				goto free_sa_state_ctr;
 +			}
-@@ -583,5 +585,7 @@ int eip93_send_req(struct crypto_async_request *async,
- 	rctx->sa_state_base = dma_map_single(eip93->dev, rctx->sa_state,
+@@ -584,1 +586,1 @@
 -					     sizeof(*rctx->sa_state), DMA_TO_DEVICE);
 +					     sizeof(*rctx->sa_state), DMA_BIDIRECTIONAL);
- 	err = dma_mapping_error(eip93->dev, rctx->sa_state_base);
+@@ -586,2 +588,4 @@
 -	if (err)
+-		goto free_sa_state_ctr_dma;
 +	if (err) {
 +		err = -ENOMEM;
- 		goto free_sa_state_ctr_dma;
++		goto free_sa_state_ctr_dma;
 +	}
 @@ -596,6 +600,10 @@ int eip93_send_req(struct crypto_async_request *async,
  	scoped_guard(spinlock_bh, &eip93->ring->idr_lock)
@@ -98,15 +97,9 @@ and unwind the IDR entry and DMA mappings on later synchronous failures.
 -				 DMA_TO_DEVICE);
  free_sa_state:
  	kfree(rctx->sa_state);
-@@ -687,9 +706,9 @@ void eip93_handle_result(struct eip93_device *eip93, struct eip93_cipher_reqctx *rctx,
- 	if (rctx->sa_state_ctr)
- 		dma_unmap_single(eip93->dev, rctx->sa_state_ctr_base,
- 				 sizeof(*rctx->sa_state_ctr),
+@@ -690,1 +709,1 @@
 -				 DMA_FROM_DEVICE);
 +				 DMA_BIDIRECTIONAL);
- 
- 	if (rctx->sa_state)
- 		dma_unmap_single(eip93->dev, rctx->sa_state_base,
- 				 sizeof(*rctx->sa_state),
+@@ -695,1 +714,1 @@
 -				 DMA_FROM_DEVICE);
 +				 DMA_BIDIRECTIONAL);

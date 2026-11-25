@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: PonWrt Maintainers <ponwrt@example.invalid>
+Subject: [PATCH] crypto: eip93: reject HMAC use before setkey
+
+Do not initialize an HMAC request from the zero-filled ipad/opad buffers.
+Track successful setkey completion and reject init until a valid key exists.
+
+---
+--- a/drivers/crypto/inside-secure/eip93/eip93-hash.c
++++ b/drivers/crypto/inside-secure/eip93/eip93-hash.c
+@@ -321,6 +321,9 @@
+ 	struct eip93_hash_ctx *ctx = crypto_ahash_ctx(ahash);
+ 	struct sa_state *sa_state = &rctx->sa_state;
+ 
++	if (IS_HMAC(ctx->flags) && !ctx->key_set)
++		return -EINVAL;
++
+ 	memset(sa_state->state_byte_cnt, 0, sizeof(u32) * 2);
+ 	eip93_hash_init_sa_state_digest(ctx->flags & EIP93_HASH_MASK,
+ 					sa_state->state_i_digest);
+@@ -621,9 +624,15 @@
+ 	unsigned int digestsize = crypto_ahash_digestsize(ahash);
+ 	struct crypto_tfm *tfm = crypto_ahash_tfm(ahash);
+ 	struct eip93_hash_ctx *ctx = crypto_tfm_ctx(tfm);
++	int ret;
+ 
+-	return eip93_hmac_setkey(ctx->flags, key, keylen, digestsize,
+-				 ctx->ipad, ctx->opad, true);
++	ctx->key_set = false;
++	ret = eip93_hmac_setkey(ctx->flags, key, keylen, digestsize,
++				ctx->ipad, ctx->opad, true);
++	if (!ret)
++		ctx->key_set = true;
++
++	return ret;
+ }
+ 
+ static int eip93_hash_cra_init(struct crypto_tfm *tfm)
+@@ -637,6 +646,7 @@
+ 
+ 	ctx->eip93 = tmpl->eip93;
+ 	ctx->flags = tmpl->flags;
++	ctx->key_set = false;
+ 
+ 	return 0;
+ }
+--- a/drivers/crypto/inside-secure/eip93/eip93-hash.h
++++ b/drivers/crypto/inside-secure/eip93/eip93-hash.h
+@@ -20,2 +20,3 @@ HMAC key state
+-	u8			ipad[SHA256_BLOCK_SIZE] __aligned(sizeof(u32));
+-	u8			opad[SHA256_DIGEST_SIZE] __aligned(sizeof(u32));
++	u8			ipad[SHA256_BLOCK_SIZE] __aligned(sizeof(u32));
++	u8			opad[SHA256_DIGEST_SIZE] __aligned(sizeof(u32));
++	bool			key_set;
