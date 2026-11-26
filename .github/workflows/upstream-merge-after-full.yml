@@ -1,0 +1,48 @@
+name: Merge upstream candidate after Full validation
+
+on:
+  workflow_run:
+    workflows:
+      - Build Nokia XG-040G-MD UBI (AN7581)
+    types:
+      - completed
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-candidate-merge
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'upstream-candidate-')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify exact successful Full run and merge its PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          CANDIDATE_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          CANDIDATE_SHA: ${{ github.event.workflow_run.head_sha }}
+          FULL_RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CANDIDATE_BRANCH"
+          test -n "$CANDIDATE_SHA"
+          pr_json="$(gh pr list --repo "$GH_REPO" --state open --head "$CANDIDATE_BRANCH" --json number,headRefOid,baseRefName)"
+          number="$(jq -r --arg sha "$CANDIDATE_SHA" --arg base epon1g-nokia-xg-040g-md '.[] | select(.headRefOid == $sha and .baseRefName == $base) | .number' <<<"$pr_json" | head -n1)"
+          if [ -z "$number" ]; then
+            echo "No open candidate PR matches successful Full SHA $CANDIDATE_SHA; refusing merge."
+            exit 1
+          fi
+          gh run view "$FULL_RUN_ID" --repo "$GH_REPO" --json conclusion,headSha,headBranch,workflowName
+          conclusion="$(gh run view "$FULL_RUN_ID" --repo "$GH_REPO" --json conclusion --jq .conclusion)"
+          head_sha="$(gh run view "$FULL_RUN_ID" --repo "$GH_REPO" --json headSha --jq .headSha)"
+          workflow="$(gh run view "$FULL_RUN_ID" --repo "$GH_REPO" --json workflowName --jq .workflowName)"
+          test "$conclusion" = success
+          test "$head_sha" = "$CANDIDATE_SHA"
+          test "$workflow" = "Build Nokia XG-040G-MD UBI (AN7581)"
+          gh pr merge "$number" --repo "$GH_REPO" --squash --delete-branch
