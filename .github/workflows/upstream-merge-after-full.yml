@@ -45,4 +45,10 @@ jobs:
           test "$conclusion" = success
           test "$head_sha" = "$CANDIDATE_SHA"
           test "$workflow" = "Build Nokia XG-040G-MD UBI (AN7581)"
+          current_base="$(gh api "repos/$GH_REPO/branches/epon1g-nokia-xg-040g-md" --jq .commit.sha)"
+          merge_base="$(gh api "repos/$GH_REPO/compare/epon1g-nokia-xg-040g-md...$CANDIDATE_SHA" --jq .merge_base_commit.sha)"
+          if [ "$current_base" != "$merge_base" ]; then
+            echo "Default branch advanced after candidate creation; refusing to merge a Full result validated against an older base."
+            exit 1
+          fi
           gh pr merge "$number" --repo "$GH_REPO" --squash --delete-branch
