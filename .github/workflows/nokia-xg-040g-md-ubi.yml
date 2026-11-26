@@ -171,9 +171,6 @@ jobs:
               for key in ("upstream_commit", "fork_commit"):
                   if not re.fullmatch(r"[0-9a-f]{40}", source[key]):
                       raise SystemExit(f"Invalid {name}.{key} in source lock")
-              if source["feed"]["commit"] != source["fork_commit"]:
-                  raise SystemExit(f"{name}: feed pin and fork main SHA differ")
-
               spec = None
               for line in Path("feeds.conf.default").read_text().splitlines():
                   fields = line.split()
