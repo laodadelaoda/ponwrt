@@ -143,6 +143,17 @@ jobs:
           print("PASS: all 16 EIP93 patches replayed in exact order without fuzz/offset/reject.")
           PY
 
+      - name: Build OpenWrt host tools and pinned cross toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          make tools/install -j"$(nproc)" V=s 2>&1 | tee tools-install.log
+          make toolchain/install -j"$(nproc)" V=s 2>&1 | tee toolchain-install.log
+          test -x staging_dir/host/bin/m4
+          test -x staging_dir/toolchain-aarch64_cortex-a53_gcc-14.4.0_musl/bin/aarch64-openwrt-linux-musl-gcc
+          staging_dir/host/bin/m4 --version | head -n 1
+          staging_dir/toolchain-aarch64_cortex-a53_gcc-14.4.0_musl/bin/aarch64-openwrt-linux-musl-gcc --version | head -n 1
+
       - name: Compile and link the full AN7581 kernel and modules
         shell: bash
         run: |
@@ -182,6 +193,8 @@ jobs:
           name: eip93-build-validation-${{ github.sha }}
           path: |
             prepare.log
+            tools-install.log
+            toolchain-install.log
             kernel-compile.log
             kernel-packages-compile.log
             module-file.txt
