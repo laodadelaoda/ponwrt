@@ -58,7 +58,7 @@ jobs:
           mkdir -p upstream-report
           audit() {
             name="$1"; fork="$2"; upstream="$3"; protected="$4"
-            dir="upstream-report/$name"
+            dir="$RUNNER_TEMP/$name"
             git clone --quiet "$fork" "$dir"
             git -C "$dir" remote add upstream "$upstream"
             git -C "$dir" fetch --quiet upstream main
@@ -67,6 +67,12 @@ jobs:
             base="$(git -C "$dir" merge-base "$f" "$u")" || { echo "HOLD: $name has no common ancestor"; return 1; }
             read -r ahead behind < <(git -C "$dir" rev-list --left-right --count "$f...$u")
             echo "$name fork=$f upstream=$u merge-base=$base fork-only=$ahead upstream-only=$behind" | tee -a upstream-report/feeds.txt
+            git -C "$dir" diff --stat "$base..$f" > "upstream-report/$name-fork-diffstat.txt"
+            git -C "$dir" diff --stat "$base..$u" > "upstream-report/$name-upstream-diffstat.txt"
+            if [ "$protected" = bosa ]; then
+              git -C "$dir" diff "$base..$f" -- airoha-pon-frontends/src/airoha-en7572.c > upstream-report/bosa-a0-a2-fork.diff
+              git -C "$dir" diff "$base..$u" -- airoha-pon-frontends/src/airoha-en7572.c > upstream-report/bosa-a0-a2-upstream.diff
+            fi
             if [ "$protected" = bosa ]; then
               src="$(git -C "$dir" show "$f:airoha-pon-frontends/src/airoha-en7572.c")"
               for marker in selected_bob_base bob_a0_valid bob_a2_valid en7572_bob_base; do
@@ -94,13 +100,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          base_sha="$(git rev-parse refs/remotes/origin/epon1g-nokia-xg-040g-md)"
           git add -u
           git add feeds.conf.default
-          if git diff --cached --quiet; then
+          if [ "$(git rev-parse HEAD)" = "$base_sha" ] && git diff --cached --quiet; then
             echo "No compatible upstream updates."
             exit 0
           fi
-          git commit -m "upstream: integrate audited compatible revisions"
+          if ! git diff --cached --quiet; then
+            git commit -m "upstream: update audited PON feed pins"
+          fi
           branch="upstream-candidate-${{ github.run_id }}"
           candidate="$(git rev-parse HEAD)"
           git push origin "HEAD:refs/heads/$branch"
