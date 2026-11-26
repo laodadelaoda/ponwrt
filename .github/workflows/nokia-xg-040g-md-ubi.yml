@@ -16,6 +16,13 @@ on:
       - scripts/feeds
       - target/linux/airoha/**
       - target/linux/generic/**
+  pull_request:
+    branches:
+      - epon1g-nokia-xg-040g-md
+    types:
+      - opened
+      - synchronize
+      - reopened
   workflow_dispatch:
 
 permissions:
