@@ -37,7 +37,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && !startsWith(github.head_ref, 'upstream-candidate-'))
     name: AN7581 / Nokia XG-040G-MD UBI
     runs-on: ubuntu-24.04
     timeout-minutes: 360
