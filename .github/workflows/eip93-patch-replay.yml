@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - epon1g-nokia-xg-040g-md
-      - eip93-zero-fuzz-fix
     paths:
       - .github/workflows/eip93-patch-replay.yml
       - target/linux/generic/hack-6.18/*eip93*.patch
