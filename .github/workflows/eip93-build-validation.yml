@@ -59,7 +59,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          grep -qx 'LINUX_VERSION-6.18 = 60' <(grep '^LINUX_VERSION-6.18 = ' target/linux/generic/kernel-6.18)
+          grep -qx 'LINUX_VERSION-6.18 = .60' <(grep '^LINUX_VERSION-6.18 = ' target/linux/generic/kernel-6.18)
           grep -qx 'LINUX_KERNEL_HASH-6.18.60 = 3c2f44ef6acc021a7ad444d9a2e6ec1ef488ff09368793d0004a6080f69d621e' <(grep '^LINUX_KERNEL_HASH-6.18.60 = ' target/linux/generic/kernel-6.18)
 
           ./scripts/feeds update -a
