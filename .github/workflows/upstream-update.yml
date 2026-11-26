@@ -199,7 +199,7 @@ jobs:
           print("Tracked patch inventory SHA256:", patch_hash.hexdigest())
           PY
 
-      - name: Create candidate PR and dispatch one Full for its exact SHA
+      - name: Create upstream candidate PR; Full remains an explicit action
         env:
           GH_TOKEN: ${{ secrets.UPSTREAM_PR_TOKEN }}
         shell: bash
@@ -219,15 +219,13 @@ jobs:
           candidate="$(git rev-parse HEAD)"
           git push origin "HEAD:refs/heads/$branch"
           if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error::Candidate branch $branch was pushed, but UPSTREAM_PR_TOKEN is missing. Add a token with Contents, Pull requests, and Actions write permissions to create the PR and run Full automatically."
+            echo "::error::Candidate branch $branch was pushed, but UPSTREAM_PR_TOKEN is missing. Add a token with Contents, Pull requests, and Actions write permissions to create the PR."
             exit 1
           fi
           gh pr create --base epon1g-nokia-xg-040g-md --head "$branch" \
             --title "upstream: audited compatible update" \
             --body "Candidate generated after upstream history and PON feed compatibility checks. ponwrt-source-lock.json pins all four upstream source revisions, both fork feed pins, feeds.conf.default, and the tracked patch inventory. It is merged only after Full succeeds on this exact head SHA."
           printf 'candidate=%s\nsha=%s\n' "$branch" "$candidate" > upstream-report/candidate.txt
-          gh workflow run .github/workflows/nokia-xg-040g-md-ubi.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
-          echo "Dispatched one Full build for candidate SHA $candidate."
 
       - name: Upload audit report
         if: always()
