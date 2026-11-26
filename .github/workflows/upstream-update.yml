@@ -1,0 +1,120 @@
+name: Upstream candidate evaluation
+
+on:
+  schedule:
+    - cron: "23 4 * * 1,4"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: upstream-candidate
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: epon1g-nokia-xg-040g-md
+          fetch-depth: 0
+
+      - name: Evaluate core upstream history and mergeability
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p upstream-report
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add immortalwrt https://github.com/immortalwrt/immortalwrt.git
+          git remote add ponwrt-upstream https://github.com/pbs05/ponwrt.git
+          git fetch --no-tags immortalwrt master
+          git fetch --no-tags ponwrt-upstream master
+          integrate() {
+            ref="$1"; label="$2"
+            base="$(git merge-base HEAD "$ref")" || { echo "HOLD: no merge base for $label"; return 1; }
+            counts="$(git rev-list --left-right --count "HEAD...$ref")"
+            local_only="$(awk '{print $1}' <<<"$counts")"
+            upstream_only="$(awk '{print $2}' <<<"$counts")"
+            echo "$label merge-base=$base local-only=$local_only upstream-only=$upstream_only" | tee -a upstream-report/history.txt
+            if [ "$upstream_only" -eq 0 ]; then return 0; fi
+            git merge-tree --write-tree HEAD "$ref" >"upstream-report/$label-merge-tree.txt" || {
+              echo "HOLD: merge conflict in $label"; return 1;
+            }
+            git merge --no-ff --no-edit "$ref" -m "upstream: integrate $label"
+          }
+          integrate immortalwrt/master ImmortalWrt
+          integrate ponwrt-upstream/master PonWrt
+
+      - name: Audit PON fork ancestry and preserve BOSA A0/A2 behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p upstream-report
+          audit() {
+            name="$1"; fork="$2"; upstream="$3"; protected="$4"
+            dir="upstream-report/$name"
+            git clone --quiet "$fork" "$dir"
+            git -C "$dir" remote add upstream "$upstream"
+            git -C "$dir" fetch --quiet upstream main
+            f="$(git -C "$dir" rev-parse origin/main)"
+            u="$(git -C "$dir" rev-parse upstream/main)"
+            base="$(git -C "$dir" merge-base "$f" "$u")" || { echo "HOLD: $name has no common ancestor"; return 1; }
+            read -r ahead behind < <(git -C "$dir" rev-list --left-right --count "$f...$u")
+            echo "$name fork=$f upstream=$u merge-base=$base fork-only=$ahead upstream-only=$behind" | tee -a upstream-report/feeds.txt
+            if [ "$protected" = bosa ]; then
+              src="$(git -C "$dir" show "$f:airoha-pon-frontends/src/airoha-en7572.c")"
+              for marker in selected_bob_base bob_a0_valid bob_a2_valid en7572_bob_base; do
+                grep -q "$marker" <<<"$src" || { echo "HOLD: missing protected BOSA marker $marker"; return 1; }
+              done
+              [ "$behind" -eq 0 ] || { echo "HOLD: Drivers upstream ahead; A0/A2 behavior requires manual equivalence review"; return 1; }
+            else
+              [ "$behind" -eq 0 ] || { echo "HOLD: Userspace fork behind upstream"; return 1; }
+            fi
+            echo "$name=$f" >> upstream-report/feed-revisions.env
+          }
+          : > upstream-report/feed-revisions.env
+          audit pon_drivers https://github.com/laodadelaoda/openwrt-pon-drivers.git https://github.com/pbs05/openwrt-pon-drivers.git bosa
+          audit pon_userspace https://github.com/laodadelaoda/openwrt-pon-userspace.git https://github.com/pbs05/openwrt-pon-userspace.git none
+          driver="$(sed -n 's/^pon_drivers=//p' upstream-report/feed-revisions.env)"
+          userspace="$(sed -n 's/^pon_userspace=//p' upstream-report/feed-revisions.env)"
+          sed -i -E "s#^(src-git pon_drivers https://github.com/laodadelaoda/openwrt-pon-drivers.git)\^[0-9a-f]{40}#\1^$driver#" feeds.conf.default
+          sed -i -E "s#^(src-git pon_userspace https://github.com/laodadelaoda/openwrt-pon-userspace.git)\^[0-9a-f]{40}#\1^$userspace#" feeds.conf.default
+          grep -F "pon_drivers.git^$driver" feeds.conf.default
+          grep -F "pon_userspace.git^$userspace" feeds.conf.default
+
+      - name: Create candidate PR and dispatch exact Full build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -u
+          git add feeds.conf.default
+          if git diff --cached --quiet; then
+            echo "No compatible upstream updates."
+            exit 0
+          fi
+          git commit -m "upstream: integrate audited compatible revisions"
+          branch="upstream-candidate-${{ github.run_id }}"
+          candidate="$(git rev-parse HEAD)"
+          git push origin "HEAD:refs/heads/$branch"
+          gh pr create --base epon1g-nokia-xg-040g-md --head "$branch" \
+            --title "upstream: audited compatible update" \
+            --body "Candidate generated after common-ancestor, commit-history, mergeability, PON fork, and BOSA A0/A2 checks. It is merged only after the Full workflow succeeds on this exact head SHA."
+          gh workflow run nokia-xg-040g-md-ubi.yml --ref "$branch"
+          printf 'candidate=%s\nsha=%s\n' "$branch" "$candidate" > upstream-report/candidate.txt
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: upstream-audit-${{ github.run_id }}
+          path: upstream-report/
+          if-no-files-found: warn
+          retention-days: 90
