@@ -111,7 +111,7 @@ jobs:
           grep '^src-git pon_drivers ' feeds.conf.default
           grep '^src-git pon_userspace ' feeds.conf.default
 
-      - name: Create candidate PR and dispatch exact Full build
+      - name: Create candidate PR; Full validation starts from the PR event
         env:
           GH_TOKEN: ${{ secrets.UPSTREAM_PR_TOKEN }}
         shell: bash
@@ -137,7 +137,6 @@ jobs:
           gh pr create --base epon1g-nokia-xg-040g-md --head "$branch" \
             --title "upstream: audited compatible update" \
             --body "Candidate generated after common-ancestor, commit-history, mergeability, PON fork, and BOSA A0/A2 checks. It is merged only after the Full workflow succeeds on this exact head SHA."
-          gh workflow run nokia-xg-040g-md-ubi.yml --ref "$branch"
           printf 'candidate=%s\nsha=%s\n' "$branch" "$candidate" > upstream-report/candidate.txt
 
       - name: Upload audit report
