@@ -172,6 +172,13 @@ jobs:
               "941-crypto-eip93-encode-aead-aad-offset.patch",
               "942-crypto-eip93-reject-zero-length-hash-final.patch",
           ]
+          actual_files = sorted(
+              p.name for p in Path("target/linux/generic/hack-6.18").glob("*eip93*.patch")
+          )
+          if actual_files != sorted(expected):
+              raise SystemExit(
+                  f"EIP93 patch file set mismatch: expected={sorted(expected)}, actual={actual_files}"
+              )
           lines = Path("eip93-patch-replay.log").read_text(errors="replace").splitlines()
           sections, order, active = {}, [], None
           applying = re.compile(r"^Applying .*?/([^/]+\.patch)(?:\s|$)")
