@@ -159,6 +159,13 @@ jobs:
               "941-crypto-eip93-encode-aead-aad-offset.patch",
               "942-crypto-eip93-reject-zero-length-hash-final.patch",
           ]
+          actual_files = sorted(
+              p.name for p in Path("target/linux/generic/hack-6.18").glob("*eip93*.patch")
+          )
+          if actual_files != sorted(expected):
+              raise SystemExit(
+                  f"EIP93 patch file set mismatch: expected={sorted(expected)}, actual={actual_files}"
+              )
           log = Path("patch-replay.log").read_text(errors="replace").splitlines()
           sections = {}
           order = []
@@ -214,6 +221,20 @@ jobs:
             echo "Hardware verification: NOT RUN"
           } | tee patch-replay-report.txt
 
+      - name: Archive patched EIP93 source snapshot
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t kernel_dirs < <(find build_dir -type d -name 'linux-6.18.60' -print)
+          if [ "${#kernel_dirs[@]}" -eq 1 ] &&
+             [ -d "${kernel_dirs[0]}/drivers/crypto/inside-secure/eip93" ]; then
+            tar -czf eip93-patched-source-snapshot.tar.gz -C "${kernel_dirs[0]}" drivers/crypto/inside-secure/eip93
+            sha256sum eip93-patched-source-snapshot.tar.gz > eip93-patched-source-snapshot.sha256
+          else
+            echo "No unique prepared Linux 6.18.60 source tree; snapshot unavailable" >&2
+          fi
+
       - name: Upload replay evidence
         if: always()
         uses: actions/upload-artifact@v6
@@ -224,5 +245,7 @@ jobs:
             patch-replay.log
             patch-replay-report.txt
             eip93-replay-failure-context.tar.gz
+            eip93-patched-source-snapshot.tar.gz
+            eip93-patched-source-snapshot.sha256
           if-no-files-found: warn
           retention-days: 30
