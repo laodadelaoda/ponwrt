@@ -2,18 +2,15 @@ From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: PonWrt Maintainers <ponwrt@example.invalid>
 Subject: [PATCH] crypto: eip93: validate imported hash staging state
 
-The exported state stores the unprocessed tail in a fixed 64-byte buffer.
-Validate both its declared length and the driver's tail-length invariant
-before copying any imported fields into the request context. This prevents
-an oversized data_used value from overrunning the request context and rejects
-states that would later produce an invalid zero-length final DMA mapping.
-
-HMAC import must also reject use before a successful setkey, matching init.
+Validate imported hash state before copying it into the request context, including HMAC key state and the exported tail-length invariant.
 
 ---
 --- a/drivers/crypto/inside-secure/eip93/eip93-hash.c
 +++ b/drivers/crypto/inside-secure/eip93/eip93-hash.c
-@@ -771,7 +771,23 @@
+@@ -768,14 +768,30 @@
+ 	return eip93_hash_finup(req);
+ }
+ 
  static int eip93_hash_import(struct ahash_request *req, const void *in)
  {
  	struct eip93_hash_reqctx *rctx = ahash_request_ctx_dma(req);
@@ -37,4 +34,7 @@ HMAC import must also reject use before a successful setkey, matching init.
 +		return -EINVAL;
  
  	memcpy(sa_state->state_byte_cnt, state->state_len, sizeof(u32) * 2);
-	memcpy(sa_state->state_i_digest, state->state_hash, SHA256_DIGEST_SIZE);
+ 	memcpy(sa_state->state_i_digest, state->state_hash, SHA256_DIGEST_SIZE);
+ 
+ 	__eip93_hash_init(req);
+ 
