@@ -148,8 +148,6 @@ jobs:
               patch_hash.update(b"\0")
               patch_hash.update(hashlib.sha256(Path(name.decode()).read_bytes()).digest())
 
-          drivers = Path("/tmp/pon_drivers")
-          userspace = Path("/tmp/pon_userspace")
           # The audit step clones these repositories under RUNNER_TEMP.
           import os
           drivers = Path(os.environ["RUNNER_TEMP"]) / "pon_drivers"
@@ -201,7 +199,7 @@ jobs:
           print("Tracked patch inventory SHA256:", patch_hash.hexdigest())
           PY
 
-      - name: Create candidate PR; Full validation starts from the PR event
+      - name: Create candidate PR and dispatch one Full for its exact SHA
         env:
           GH_TOKEN: ${{ secrets.UPSTREAM_PR_TOKEN }}
         shell: bash
