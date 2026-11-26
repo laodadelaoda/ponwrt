@@ -1,6 +1,11 @@
 name: Merge upstream candidate after Full validation
 
 on:
+  push:
+    branches:
+      - epon1g-nokia-xg-040g-md
+    paths:
+      - .github/workflows/upstream-merge-after-full.yml
   workflow_run:
     workflows:
       - Build Nokia XG-040G-MD UBI (AN7581)
@@ -16,8 +21,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  refresh-stale-candidate:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Refresh latest open candidate against current base
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_branch="epon1g-nokia-xg-040g-md"
+          current_base="$(gh api "repos/$GH_REPO/branches/$base_branch" --jq .commit.sha)"
+          pr_json="$(gh pr list --repo "$GH_REPO" --state open --base "$base_branch" --json number,headRefName,headRefOid,createdAt)"
+          candidate="$(jq -c '[.[] | select(.headRefName | startswith("upstream-candidate-"))] | sort_by(.createdAt) | last // empty' <<<"$pr_json")"
+          if [ -z "$candidate" ]; then
+            echo "No open upstream candidate PR; nothing to refresh."
+            exit 0
+          fi
+          number="$(jq -r .number <<<"$candidate")"
+          head_sha="$(jq -r .headRefOid <<<"$candidate")"
+          merge_base="$(gh api "repos/$GH_REPO/compare/$base_branch...$head_sha" --jq .merge_base_commit.sha)"
+          if [ "$current_base" = "$merge_base" ]; then
+            echo "Latest candidate PR #$number already includes current base $current_base."
+            exit 0
+          fi
+          echo "Refreshing PR #$number from $head_sha with current base $current_base."
+          echo "GitHub branch update will trigger a new PR synchronization and Full build."
+          gh api --method PUT "repos/$GH_REPO/pulls/$number/update-branch" -f expected_head_sha="$head_sha"
+
   merge:
-    if: github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'upstream-candidate-')
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'upstream-candidate-')
     runs-on: ubuntu-24.04
     steps:
       - name: Verify exact successful Full run and merge its PR
@@ -32,12 +67,14 @@ jobs:
           set -euo pipefail
           test -n "$CANDIDATE_BRANCH"
           test -n "$CANDIDATE_SHA"
+
           pr_json="$(gh pr list --repo "$GH_REPO" --state open --head "$CANDIDATE_BRANCH" --json number,headRefOid,baseRefName)"
           number="$(jq -r --arg sha "$CANDIDATE_SHA" --arg base epon1g-nokia-xg-040g-md '.[] | select(.headRefOid == $sha and .baseRefName == $base) | .number' <<<"$pr_json" | head -n1)"
           if [ -z "$number" ]; then
             echo "No open candidate PR matches successful Full SHA $CANDIDATE_SHA; refusing merge."
             exit 1
           fi
+
           run_json="$(gh api "repos/$GH_REPO/actions/runs/$FULL_RUN_ID")"
           conclusion="$(jq -r '.conclusion' <<<"$run_json")"
           workflow_id="$(jq -r '.workflow_id' <<<"$run_json")"
@@ -48,10 +85,13 @@ jobs:
           test "$run_branch" = "$CANDIDATE_BRANCH"
           workflow_name="$(gh api "repos/$GH_REPO/actions/workflows/$workflow_id" --jq .name)"
           test "$workflow_name" = "Build Nokia XG-040G-MD UBI (AN7581)"
+
           current_base="$(gh api "repos/$GH_REPO/branches/epon1g-nokia-xg-040g-md" --jq .commit.sha)"
           merge_base="$(gh api "repos/$GH_REPO/compare/epon1g-nokia-xg-040g-md...$CANDIDATE_SHA" --jq .merge_base_commit.sha)"
-          test "$current_base" = "$merge_base" || {
-            echo "Default branch advanced after candidate creation; refusing stale merge."
+          if [ "$current_base" != "$merge_base" ]; then
+            echo "Candidate is stale; refresh workflow will update it and require a new Full build."
             exit 1
-          }
+          fi
+
+          echo "Exact Full SHA is current and validated; merging PR #$number."
           gh pr merge "$number" --repo "$GH_REPO" --squash --delete-branch

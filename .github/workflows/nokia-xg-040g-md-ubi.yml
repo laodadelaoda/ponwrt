@@ -29,12 +29,15 @@ on:
 permissions:
   contents: read
 
+# A PR has one concurrency slot regardless of its changing head SHA.
+# A newer candidate replaces and cancels any older in-flight Full build.
 concurrency:
-  group: nokia-xg-040g-md-ubi-${{ github.event.pull_request.head.sha || github.ref }}
-  cancel-in-progress: false
+  group: nokia-xg-040g-md-ubi-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: AN7581 / Nokia XG-040G-MD UBI
     runs-on: ubuntu-24.04
     timeout-minutes: 360
@@ -53,8 +56,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          actual_head="$(git rev-parse HEAD^2)"
+          # The PR workflow checks out GitHub's synthetic merge commit.
+          # Do not assume either parent is present in the shallow checkout.
+          git fetch --no-tags --depth=1 origin "$EXPECTED_HEAD_SHA"
+          actual_head="$(git rev-parse FETCH_HEAD)"
           test "$actual_head" = "$EXPECTED_HEAD_SHA"
+          git cat-file -e "$actual_head^{commit}"
           echo "Candidate PR head SHA: $actual_head" | tee -a source-revisions.txt
 
       - name: Free build space
