@@ -25,7 +25,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           CANDIDATE_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          CANDIDATE_SHA: ${{ github.event.workflow_run.head_sha }}
+          CANDIDATE_SHA: ${{ github.event.workflow_run.pull_requests[0].head.sha || github.event.workflow_run.head_sha }}
           FULL_RUN_ID: ${{ github.event.workflow_run.id }}
         shell: bash
         run: |
@@ -38,17 +38,28 @@ jobs:
             echo "No open candidate PR matches successful Full SHA $CANDIDATE_SHA; refusing merge."
             exit 1
           fi
-          gh run view "$FULL_RUN_ID" --repo "$GH_REPO" --json conclusion,headSha,headBranch,workflowName
-          conclusion="$(gh run view "$FULL_RUN_ID" --repo "$GH_REPO" --json conclusion --jq .conclusion)"
-          head_sha="$(gh run view "$FULL_RUN_ID" --repo "$GH_REPO" --json headSha --jq .headSha)"
-          workflow="$(gh run view "$FULL_RUN_ID" --repo "$GH_REPO" --json workflowName --jq .workflowName)"
+          run_json="$(gh api "repos/$GH_REPO/actions/runs/$FULL_RUN_ID")"
+          conclusion="$(jq -r '.conclusion' <<<"$run_json")"
+          workflow_id="$(jq -r '.workflow_id' <<<"$run_json")"
+          run_head="$(jq -r '.pull_requests[0].head.sha // .head_sha' <<<"$run_json")"
+          run_base="$(jq -r '.pull_requests[0].base.sha // empty' <<<"$run_json")"
+          run_branch="$(jq -r '.head_branch' <<<"$run_json")"
           test "$conclusion" = success
-          test "$head_sha" = "$CANDIDATE_SHA"
-          test "$workflow" = "Build Nokia XG-040G-MD UBI (AN7581)"
+          test "$run_head" = "$CANDIDATE_SHA"
+          test "$run_branch" = "$CANDIDATE_BRANCH"
+          workflow_name="$(gh api "repos/$GH_REPO/actions/workflows/$workflow_id" --jq .name)"
+          test "$workflow_name" = "Build Nokia XG-040G-MD UBI (AN7581)"
           current_base="$(gh api "repos/$GH_REPO/branches/epon1g-nokia-xg-040g-md" --jq .commit.sha)"
-          merge_base="$(gh api "repos/$GH_REPO/compare/epon1g-nokia-xg-040g-md...$CANDIDATE_SHA" --jq .merge_base_commit.sha)"
-          if [ "$current_base" != "$merge_base" ]; then
-            echo "Default branch advanced after candidate creation; refusing to merge a Full result validated against an older base."
-            exit 1
+          if [ -n "$run_base" ]; then
+            test "$run_base" = "$current_base" || {
+              echo "Full validated a PR against an older base SHA; refusing stale merge."
+              exit 1
+            }
+          else
+            merge_base="$(gh api "repos/$GH_REPO/compare/epon1g-nokia-xg-040g-md...$CANDIDATE_SHA" --jq .merge_base_commit.sha)"
+            test "$current_base" = "$merge_base" || {
+              echo "Default branch advanced after candidate creation; refusing stale merge."
+              exit 1
+            }
           fi
           gh pr merge "$number" --repo "$GH_REPO" --squash --delete-branch
