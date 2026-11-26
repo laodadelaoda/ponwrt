@@ -100,7 +100,6 @@ jobs:
           set -euo pipefail
           make target/linux/prepare V=s 2>&1 | tee prepare.log
           python3 - <<'PY'
-          import re
           from pathlib import Path
           expected = [
             "927-crypto-eip93-per-request-sa-record.patch",
@@ -122,11 +121,10 @@ jobs:
           ]
           log = Path("prepare.log").read_text(errors="replace").splitlines()
           sections, order, active = {}, [], None
-          rx = re.compile(r"^Applying .*?/([^/]+\.patch)(?:\\s|$)")
           for line in log:
-            m = rx.search(line)
-            if m:
-              active = m.group(1) if m.group(1) in expected else None
+            if line.startswith("Applying "):
+              name = line.split("/")[-1].split()[0]
+              active = name if name in expected else None
               if active:
                 order.append(active)
                 sections.setdefault(active, []).append(line)
@@ -134,13 +132,14 @@ jobs:
               sections[active].append(line)
           if order != expected:
             raise SystemExit(f"EIP93 patch order/count mismatch: {order}")
-          bad = re.compile(r"with fuzz|offset\\s+-?\\d+\\s+lines?|FAILED|malformed patch|Reversed \\(or previously applied\\)", re.I)
           for name in expected:
             body = sections.get(name, [])
             if not any("patching file " in x for x in body):
               raise SystemExit(f"{name}: no patch application confirmation")
-            if any(bad.search(x) for x in body):
-              raise SystemExit(f"{name}: non-exact patch application")
+            for line in body:
+              low = line.lower()
+              if "with fuzz" in low or ("offset " in low and "succeeded at" in low) or "failed" in low or "malformed patch" in low or "reversed (or previously applied)" in low:
+                raise SystemExit(f"{name}: non-exact patch application diagnostic: {line}")
           print("PASS: all 16 EIP93 patches replayed in exact order without fuzz/offset/reject.")
           PY
 
