@@ -163,22 +163,51 @@ jobs:
               raise SystemExit("Tracked patch inventory differs from the candidate source lock")
 
           for name in ("immortalwrt", "ponwrt"):
-              if not re.fullmatch(r"[0-9a-f]{40}", lock["sources"][name]["commit"]):
+              commit = lock["sources"][name]["commit"]
+              if not re.fullmatch(r"[0-9a-f]{40}", commit):
                   raise SystemExit(f"Invalid {name} upstream commit in source lock")
+              # The candidate integrates these upstream tips into its own history.
+              subprocess.run(
+                  ["git", "merge-base", "--is-ancestor", commit, "HEAD"],
+                  check=True,
+              )
 
-          for name in ("pon_drivers", "pon_userspace"):
+          expected_repositories = {
+              "pon_drivers": {
+                  "upstream_repository": "pbs05/openwrt-pon-drivers",
+                  "fork_repository": "laodadelaoda/openwrt-pon-drivers",
+                  "feed_url": "https://github.com/laodadelaoda/openwrt-pon-drivers.git",
+              },
+              "pon_userspace": {
+                  "upstream_repository": "pbs05/openwrt-pon-userspace",
+                  "fork_repository": "laodadelaoda/openwrt-pon-userspace",
+                  "feed_url": "https://github.com/laodadelaoda/openwrt-pon-userspace.git",
+              },
+          }
+          for name, expected in expected_repositories.items():
               source = lock["sources"][name]
               for key in ("upstream_commit", "fork_commit"):
                   if not re.fullmatch(r"[0-9a-f]{40}", source[key]):
                       raise SystemExit(f"Invalid {name}.{key} in source lock")
+              if source["upstream_repository"] != expected["upstream_repository"]:
+                  raise SystemExit(f"{name}: unexpected upstream repository")
+              if source["fork_repository"] != expected["fork_repository"]:
+                  raise SystemExit(f"{name}: unexpected fork repository")
               spec = None
               for line in Path("feeds.conf.default").read_text().splitlines():
                   fields = line.split()
                   if len(fields) >= 3 and fields[0] == "src-git" and fields[1] == name:
                       spec = fields[2]
                       break
-              if not spec or "^" not in spec or spec.rsplit("^", 1)[1] != source["feed"]["commit"]:
+              if not spec or "^" not in spec:
+                  raise SystemExit(f"{name}: missing exact feed pin")
+              configured_url, configured_commit = spec.rsplit("^", 1)
+              if configured_url != expected["feed_url"]:
+                  raise SystemExit(f"{name}: unexpected feeds.conf.default URL")
+              if configured_url != source["feed"]["url"] or configured_commit != source["feed"]["commit"]:
                   raise SystemExit(f"{name}: feeds.conf.default pin differs from source lock")
+              if not re.fullmatch(r"[0-9a-f]{40}", configured_commit):
+                  raise SystemExit(f"{name}: invalid feed commit in source lock")
 
           print("Source lock: PASS")
           print("Source lock SHA256:", sha256("ponwrt-source-lock.json"))
