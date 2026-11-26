@@ -56,8 +56,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          actual_head="$(git rev-parse HEAD^2)"
+          # The PR workflow checks out GitHub's synthetic merge commit.
+          # Do not assume either parent is present in the shallow checkout.
+          git fetch --no-tags --depth=1 origin "$EXPECTED_HEAD_SHA"
+          actual_head="$(git rev-parse FETCH_HEAD)"
           test "$actual_head" = "$EXPECTED_HEAD_SHA"
+          git cat-file -e "$actual_head^{commit}"
           echo "Candidate PR head SHA: $actual_head" | tee -a source-revisions.txt
 
       - name: Free build space
