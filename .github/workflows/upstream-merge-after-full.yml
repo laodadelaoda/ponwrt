@@ -15,6 +15,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 concurrency:
   group: upstream-candidate-merge
@@ -25,7 +26,7 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     steps:
-      - name: Refresh latest open candidate against current base
+      - name: Refresh candidate and dispatch Full for its exact SHA
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -33,6 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           base_branch="epon1g-nokia-xg-040g-md"
+          workflow_file=".github/workflows/nokia-xg-040g-md-ubi.yml"
           current_base="$(gh api "repos/$GH_REPO/branches/$base_branch" --jq .commit.sha)"
           pr_json="$(gh pr list --repo "$GH_REPO" --state open --base "$base_branch" --json number,headRefName,headRefOid,createdAt)"
           candidate="$(jq -c '[.[] | select(.headRefName | startswith("upstream-candidate-"))] | sort_by(.createdAt) | last // empty' <<<"$pr_json")"
@@ -40,16 +42,38 @@ jobs:
             echo "No open upstream candidate PR; nothing to refresh."
             exit 0
           fi
+
           number="$(jq -r .number <<<"$candidate")"
+          candidate_branch="$(jq -r .headRefName <<<"$candidate")"
           head_sha="$(jq -r .headRefOid <<<"$candidate")"
           merge_base="$(gh api "repos/$GH_REPO/compare/$base_branch...$head_sha" --jq .merge_base_commit.sha)"
-          if [ "$current_base" = "$merge_base" ]; then
-            echo "Latest candidate PR #$number already includes current base $current_base."
-            exit 0
+
+          if [ "$current_base" != "$merge_base" ]; then
+            echo "Refreshing PR #$number from $head_sha with current base $current_base."
+            gh api --method PUT "repos/$GH_REPO/pulls/$number/update-branch" -f expected_head_sha="$head_sha"
+            for attempt in $(seq 1 30); do
+              candidate_json="$(gh pr view "$number" --repo "$GH_REPO" --json headRefOid)"
+              new_head="$(jq -r .headRefOid <<<"$candidate_json")"
+              new_merge_base="$(gh api "repos/$GH_REPO/compare/$base_branch...$new_head" --jq .merge_base_commit.sha)"
+              if [ "$new_merge_base" = "$current_base" ] && [ "$new_head" != "$head_sha" ]; then
+                head_sha="$new_head"
+                echo "Candidate refreshed to $head_sha."
+                break
+              fi
+              sleep 5
+            done
+            test "$new_merge_base" = "$current_base"
           fi
-          echo "Refreshing PR #$number from $head_sha with current base $current_base."
-          echo "GitHub branch update will trigger a new PR synchronization and Full build."
-          gh api --method PUT "repos/$GH_REPO/pulls/$number/update-branch" -f expected_head_sha="$head_sha"
+
+          runs="$(gh run list --repo "$GH_REPO" --workflow "$workflow_file" --branch "$candidate_branch" --limit 50 --json headSha,status,conclusion,event)"
+          active="$(jq --arg sha "$head_sha" '[.[] | select(.headSha == $sha and (.status == "queued" or .status == "in_progress"))] | length' <<<"$runs")"
+          successful="$(jq --arg sha "$head_sha" '[.[] | select(.headSha == $sha and .event == "workflow_dispatch" and .conclusion == "success")] | length' <<<"$runs")"
+          if [ "$active" -eq 0 ] && [ "$successful" -eq 0 ]; then
+            echo "Dispatching exactly one Full build for candidate SHA $head_sha."
+            gh workflow run "$workflow_file" --repo "$GH_REPO" --ref "$candidate_branch"
+          else
+            echo "Full already active or successful for candidate SHA $head_sha; no duplicate dispatch."
+          fi
 
   merge:
     if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'upstream-candidate-')
@@ -80,18 +104,22 @@ jobs:
           workflow_id="$(jq -r '.workflow_id' <<<"$run_json")"
           run_head="$(jq -r '.head_sha' <<<"$run_json")"
           run_branch="$(jq -r '.head_branch' <<<"$run_json")"
+          run_event="$(jq -r '.event' <<<"$run_json")"
           test "$conclusion" = success
           test "$run_head" = "$CANDIDATE_SHA"
           test "$run_branch" = "$CANDIDATE_BRANCH"
+          test "$run_event" = workflow_dispatch
           workflow_name="$(gh api "repos/$GH_REPO/actions/workflows/$workflow_id" --jq .name)"
           test "$workflow_name" = "Build Nokia XG-040G-MD UBI (AN7581)"
 
           current_base="$(gh api "repos/$GH_REPO/branches/epon1g-nokia-xg-040g-md" --jq .commit.sha)"
           merge_base="$(gh api "repos/$GH_REPO/compare/epon1g-nokia-xg-040g-md...$CANDIDATE_SHA" --jq .merge_base_commit.sha)"
           if [ "$current_base" != "$merge_base" ]; then
-            echo "Candidate is stale; refresh workflow will update it and require a new Full build."
+            echo "Candidate is stale; it must be refreshed and pass Full again."
             exit 1
           fi
 
+          current_pr_head="$(gh pr view "$number" --repo "$GH_REPO" --json headRefOid --jq .headRefOid)"
+          test "$current_pr_head" = "$CANDIDATE_SHA"
           echo "Exact Full SHA is current and validated; merging PR #$number."
           gh pr merge "$number" --repo "$GH_REPO" --squash --delete-branch
