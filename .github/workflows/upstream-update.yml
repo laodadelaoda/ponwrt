@@ -42,6 +42,8 @@ jobs:
             local_only="$(awk '{print $1}' <<<"$counts")"
             upstream_only="$(awk '{print $2}' <<<"$counts")"
             echo "$label merge-base=$base local-only=$local_only upstream-only=$upstream_only" | tee -a upstream-report/history.txt
+            git log --reverse --format='%H %s' "HEAD..$ref" > "upstream-report/$label-upstream-commits.txt"
+            git diff --stat "HEAD...$ref" > "upstream-report/$label-diffstat.txt"
             if [ "$upstream_only" -eq 0 ]; then return 0; fi
             git merge-tree --write-tree HEAD "$ref" >"upstream-report/$label-merge-tree.txt" || {
               echo "HOLD: merge conflict in $label"; return 1;
