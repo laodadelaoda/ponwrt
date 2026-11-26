@@ -13,7 +13,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  actions: write
 
 concurrency:
   group: upstream-candidate
@@ -50,9 +49,7 @@ jobs:
             git log --reverse --format='%H %s' "HEAD..$ref" > "upstream-report/$label-upstream-commits.txt"
             git diff --stat "HEAD...$ref" > "upstream-report/$label-diffstat.txt"
             if [ "$upstream_only" -eq 0 ]; then return 0; fi
-            git merge-tree --write-tree HEAD "$ref" >"upstream-report/$label-merge-tree.txt" || {
-              echo "HOLD: merge conflict in $label"; return 1;
-            }
+            # The merge itself is the authoritative conflict check.
             git merge --no-ff --no-edit "$ref" -m "upstream: integrate $label"
           }
           integrate immortalwrt/master ImmortalWrt
@@ -111,7 +108,97 @@ jobs:
           grep '^src-git pon_drivers ' feeds.conf.default
           grep '^src-git pon_userspace ' feeds.conf.default
 
-      - name: Create candidate PR; Full validation starts from the PR event
+      - name: Generate deterministic source lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import re
+          import subprocess
+          from pathlib import Path
+
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+
+          def repo_git(path, *args):
+              return subprocess.check_output(["git", "-C", path, *args], text=True).strip()
+
+          def feed_pin(name):
+              for line in Path("feeds.conf.default").read_text().splitlines():
+                  fields = line.split()
+                  if len(fields) >= 3 and fields[0] == "src-git" and fields[1] == name:
+                      spec = fields[2]
+                      if "^" not in spec:
+                          raise SystemExit(f"{name}: feed is not pinned to an exact commit")
+                      url, commit = spec.rsplit("^", 1)
+                      if not re.fullmatch(r"[0-9a-f]{40}", commit):
+                          raise SystemExit(f"{name}: invalid pinned commit {commit}")
+                      return {"url": url, "commit": commit}
+              raise SystemExit(f"Missing feed {name}")
+
+          patch_hash = hashlib.sha256()
+          patch_names = subprocess.check_output(
+              ["git", "ls-files", "-z", "--", "*.patch"]
+          ).split(b"\0")
+          for name in sorted(x for x in patch_names if x):
+              patch_hash.update(name)
+              patch_hash.update(b"\0")
+              patch_hash.update(hashlib.sha256(Path(name.decode()).read_bytes()).digest())
+
+          # The audit step clones these repositories under RUNNER_TEMP.
+          import os
+          drivers = Path(os.environ["RUNNER_TEMP"]) / "pon_drivers"
+          userspace = Path(os.environ["RUNNER_TEMP"]) / "pon_userspace"
+
+          lock = {
+              "schema": 1,
+              "sources": {
+                  "immortalwrt": {
+                      "repository": "immortalwrt/immortalwrt",
+                      "ref": "master",
+                      "commit": git("rev-parse", "immortalwrt/master"),
+                  },
+                  "ponwrt": {
+                      "repository": "pbs05/ponwrt",
+                      "ref": "master",
+                      "commit": git("rev-parse", "ponwrt-upstream/master"),
+                  },
+                  "pon_drivers": {
+                      "upstream_repository": "pbs05/openwrt-pon-drivers",
+                      "upstream_ref": "main",
+                      "upstream_commit": repo_git(str(drivers), "rev-parse", "upstream/main"),
+                      "fork_repository": "laodadelaoda/openwrt-pon-drivers",
+                      "fork_ref": "main",
+                      "fork_commit": repo_git(str(drivers), "rev-parse", "origin/main"),
+                      "feed": feed_pin("pon_drivers"),
+                  },
+                  "pon_userspace": {
+                      "upstream_repository": "pbs05/openwrt-pon-userspace",
+                      "upstream_ref": "main",
+                      "upstream_commit": repo_git(str(userspace), "rev-parse", "upstream/main"),
+                      "fork_repository": "laodadelaoda/openwrt-pon-userspace",
+                      "fork_ref": "main",
+                      "fork_commit": repo_git(str(userspace), "rev-parse", "origin/main"),
+                      "feed": feed_pin("pon_userspace"),
+                  },
+              },
+              "inputs": {
+                  "feeds_conf_default_sha256": hashlib.sha256(
+                      Path("feeds.conf.default").read_bytes()
+                  ).hexdigest(),
+                  "tracked_patch_inventory_sha256": patch_hash.hexdigest(),
+              },
+          }
+          Path("ponwrt-source-lock.json").write_text(
+              json.dumps(lock, indent=2, sort_keys=True) + "\n"
+          )
+          print("Generated ponwrt-source-lock.json")
+          print("Tracked patch inventory SHA256:", patch_hash.hexdigest())
+          PY
+
+      - name: Create upstream candidate PR; Full remains an explicit action
         env:
           GH_TOKEN: ${{ secrets.UPSTREAM_PR_TOKEN }}
         shell: bash
@@ -119,7 +206,7 @@ jobs:
           set -euo pipefail
           base_sha="$(git rev-parse refs/remotes/origin/epon1g-nokia-xg-040g-md)"
           git add -u
-          git add feeds.conf.default
+          git add feeds.conf.default ponwrt-source-lock.json
           if [ "$(git rev-parse HEAD)" = "$base_sha" ] && git diff --cached --quiet; then
             echo "No compatible upstream updates."
             exit 0
@@ -131,12 +218,12 @@ jobs:
           candidate="$(git rev-parse HEAD)"
           git push origin "HEAD:refs/heads/$branch"
           if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error::Candidate branch $branch was pushed, but UPSTREAM_PR_TOKEN is missing. Add a token with Contents, Pull requests, and Actions write permissions to create the PR and run Full automatically."
+            echo "::error::Candidate branch $branch was pushed, but UPSTREAM_PR_TOKEN is missing. Add a token with Contents and Pull requests write permissions to create the PR."
             exit 1
           fi
           gh pr create --base epon1g-nokia-xg-040g-md --head "$branch" \
             --title "upstream: audited compatible update" \
-            --body "Candidate generated after common-ancestor, commit-history, mergeability, PON fork, and BOSA A0/A2 checks. It is merged only after the Full workflow succeeds on this exact head SHA."
+            --body "Candidate generated after upstream history and PON feed compatibility checks. ponwrt-source-lock.json pins all four upstream source revisions, both fork feed pins, feeds.conf.default, and the tracked patch inventory. It is merged only after Full succeeds on this exact head SHA."
           printf 'candidate=%s\nsha=%s\n' "$branch" "$candidate" > upstream-report/candidate.txt
 
       - name: Upload audit report

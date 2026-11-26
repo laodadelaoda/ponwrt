@@ -37,7 +37,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && !startsWith(github.head_ref, 'upstream-candidate-'))
     name: AN7581 / Nokia XG-040G-MD UBI
     runs-on: ubuntu-24.04
     timeout-minutes: 360
@@ -47,7 +47,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Verify candidate PR head SHA
         if: github.event_name == 'pull_request'
@@ -120,6 +120,101 @@ jobs:
           check_feed pon_userspace https://github.com/laodadelaoda/openwrt-pon-userspace.git
 
           ./scripts/feeds install -a
+
+      - name: Verify candidate source lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f ponwrt-source-lock.json ]; then
+            if [[ "${GITHUB_REF_NAME}" == upstream-candidate-* ]]; then
+              echo "Upstream candidate is missing ponwrt-source-lock.json" >&2
+              exit 1
+            fi
+            echo "No source lock on the existing base revision; legacy build path."
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import re
+          import subprocess
+          from pathlib import Path
+
+          lock = json.loads(Path("ponwrt-source-lock.json").read_text())
+          if lock.get("schema") != 1:
+              raise SystemExit("Unsupported source lock schema")
+
+          def sha256(path):
+              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+          if lock["inputs"]["feeds_conf_default_sha256"] != sha256("feeds.conf.default"):
+              raise SystemExit("feeds.conf.default differs from the candidate source lock")
+
+          patch_hash = hashlib.sha256()
+          names = subprocess.check_output(
+              ["git", "ls-files", "-z", "--", "*.patch"]
+          ).split(b"\0")
+          for name in sorted(x for x in names if x):
+              patch_hash.update(name)
+              patch_hash.update(b"\0")
+              patch_hash.update(hashlib.sha256(Path(name.decode()).read_bytes()).digest())
+          if lock["inputs"]["tracked_patch_inventory_sha256"] != patch_hash.hexdigest():
+              raise SystemExit("Tracked patch inventory differs from the candidate source lock")
+
+          for name in ("immortalwrt", "ponwrt"):
+              commit = lock["sources"][name]["commit"]
+              if not re.fullmatch(r"[0-9a-f]{40}", commit):
+                  raise SystemExit(f"Invalid {name} upstream commit in source lock")
+              # The candidate integrates these upstream tips into its own history.
+              subprocess.run(
+                  ["git", "merge-base", "--is-ancestor", commit, "HEAD"],
+                  check=True,
+              )
+
+          expected_repositories = {
+              "pon_drivers": {
+                  "upstream_repository": "pbs05/openwrt-pon-drivers",
+                  "fork_repository": "laodadelaoda/openwrt-pon-drivers",
+                  "feed_url": "https://github.com/laodadelaoda/openwrt-pon-drivers.git",
+              },
+              "pon_userspace": {
+                  "upstream_repository": "pbs05/openwrt-pon-userspace",
+                  "fork_repository": "laodadelaoda/openwrt-pon-userspace",
+                  "feed_url": "https://github.com/laodadelaoda/openwrt-pon-userspace.git",
+              },
+          }
+          for name, expected in expected_repositories.items():
+              source = lock["sources"][name]
+              for key in ("upstream_commit", "fork_commit"):
+                  if not re.fullmatch(r"[0-9a-f]{40}", source[key]):
+                      raise SystemExit(f"Invalid {name}.{key} in source lock")
+              if source["upstream_repository"] != expected["upstream_repository"]:
+                  raise SystemExit(f"{name}: unexpected upstream repository")
+              if source["fork_repository"] != expected["fork_repository"]:
+                  raise SystemExit(f"{name}: unexpected fork repository")
+              spec = None
+              for line in Path("feeds.conf.default").read_text().splitlines():
+                  fields = line.split()
+                  if len(fields) >= 3 and fields[0] == "src-git" and fields[1] == name:
+                      spec = fields[2]
+                      break
+              if not spec or "^" not in spec:
+                  raise SystemExit(f"{name}: missing exact feed pin")
+              configured_url, configured_commit = spec.rsplit("^", 1)
+              if configured_url != expected["feed_url"]:
+                  raise SystemExit(f"{name}: unexpected feeds.conf.default URL")
+              if configured_url != source["feed"]["url"] or configured_commit != source["feed"]["commit"]:
+                  raise SystemExit(f"{name}: feeds.conf.default pin differs from source lock")
+              if not re.fullmatch(r"[0-9a-f]{40}", configured_commit):
+                  raise SystemExit(f"{name}: invalid feed commit in source lock")
+
+          print("Source lock: PASS")
+          print("Source lock SHA256:", sha256("ponwrt-source-lock.json"))
+          print("Tracked patch inventory SHA256:", patch_hash.hexdigest())
+          PY
+          sha256sum ponwrt-source-lock.json | tee source-lock-sha256.txt
+          cat source-lock-sha256.txt >> source-revisions.txt
 
       - name: Derive a single-device configuration
         shell: bash
@@ -462,6 +557,7 @@ jobs:
           install -m 0644 "$sysupgrade" output/nokia_xg-040g-md-ubi-sysupgrade.itb
           install -m 0644 "$fip" output/bl31-uboot.fip
           install -m 0644 "$preloader" output/preloader.bin
+          find dl -type f -print0 | sort -z | xargs -0 -r sha256sum > output/SOURCE-ARCHIVES-SHA256SUMS
           sha256sum output/nokia_xg-040g-md-ubi-sysupgrade.itb output/bl31-uboot.fip output/preloader.bin > output/SHA256SUMS
           find output/kmods -maxdepth 1 -type f -name '*.apk' -print0 | sort -z | xargs -0 -r sha256sum >> output/SHA256SUMS
           {
@@ -470,10 +566,13 @@ jobs:
             echo 'Target: airoha/an7581'
             echo 'Device: nokia_xg-040g-md-ubi'
             echo "Built at (UTC): $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-            echo 'Source revisions:'
+            echo 'Source revisions and lock:'
             cat source-revisions.txt
+            if [ -f source-lock-sha256.txt ]; then cat source-lock-sha256.txt; fi
             echo 'Artifact SHA256:'
             cat output/SHA256SUMS
+            echo "Downloaded source files SHA256 entries: $(wc -l < output/SOURCE-ARCHIVES-SHA256SUMS)"
+            echo 'Downloaded source archive SHA256 manifest: output/SOURCE-ARCHIVES-SHA256SUMS'
             echo 'EN7572 firmware integration:'
             cat ponwrt-en7572-firmware-integration.txt
             echo 'Airoha TRNG / KASLR seed build path: PASS'
@@ -502,6 +601,8 @@ jobs:
           name: ponwrt-nokia-xg-040g-md-ubi-build-diagnostics
           path: |
             source-revisions.txt
+            source-lock-sha256.txt
+            ponwrt-source-lock.json
             single-device-config-check.txt
             download.log
             eip93-patch-replay.log
@@ -510,6 +611,7 @@ jobs:
             ponwrt-kmod-build-info.txt
             output/kmods/BUILD-INFO.txt
             output/kmods/SHA256SUMS
+            output/SOURCE-ARCHIVES-SHA256SUMS
             output/BUILD-INFO.txt
             eip93-module-dependencies.txt
             build.log
