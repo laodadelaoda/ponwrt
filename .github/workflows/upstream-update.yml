@@ -78,9 +78,15 @@ jobs:
               for marker in selected_bob_base bob_a0_valid bob_a2_valid en7572_bob_base; do
                 grep -q "$marker" <<<"$src" || { echo "HOLD: missing protected BOSA marker $marker"; return 1; }
               done
-              [ "$behind" -eq 0 ] || { echo "HOLD: Drivers upstream ahead; A0/A2 behavior requires manual equivalence review"; return 1; }
-            else
-              [ "$behind" -eq 0 ] || { echo "HOLD: Userspace fork behind upstream"; return 1; }
+              if [ "$behind" -gt 0 ]; then
+                echo "HOLD: Drivers upstream has $behind unintegrated commit(s); retain current fork pin pending A0/A2 behavioral equivalence review."
+                echo "$name=HOLD" >> upstream-report/feed-revisions.env
+                return 0
+              fi
+            elif [ "$behind" -gt 0 ]; then
+              echo "HOLD: Userspace upstream has $behind unintegrated commit(s); retain current fork pin."
+              echo "$name=HOLD" >> upstream-report/feed-revisions.env
+              return 0
             fi
             echo "$name=$f" >> upstream-report/feed-revisions.env
           }
@@ -89,10 +95,14 @@ jobs:
           audit pon_userspace https://github.com/laodadelaoda/openwrt-pon-userspace.git https://github.com/pbs05/openwrt-pon-userspace.git none
           driver="$(sed -n 's/^pon_drivers=//p' upstream-report/feed-revisions.env)"
           userspace="$(sed -n 's/^pon_userspace=//p' upstream-report/feed-revisions.env)"
-          sed -i -E "s#^(src-git pon_drivers https://github.com/laodadelaoda/openwrt-pon-drivers.git)\^[0-9a-f]{40}#\1^$driver#" feeds.conf.default
-          sed -i -E "s#^(src-git pon_userspace https://github.com/laodadelaoda/openwrt-pon-userspace.git)\^[0-9a-f]{40}#\1^$userspace#" feeds.conf.default
-          grep -F "pon_drivers.git^$driver" feeds.conf.default
-          grep -F "pon_userspace.git^$userspace" feeds.conf.default
+          if [ -n "$driver" ] && [ "$driver" != HOLD ]; then
+            sed -i -E "s#^(src-git pon_drivers https://github.com/laodadelaoda/openwrt-pon-drivers.git)\^[0-9a-f]{40}#\1^$driver#" feeds.conf.default
+          fi
+          if [ -n "$userspace" ] && [ "$userspace" != HOLD ]; then
+            sed -i -E "s#^(src-git pon_userspace https://github.com/laodadelaoda/openwrt-pon-userspace.git)\^[0-9a-f]{40}#\1^$userspace#" feeds.conf.default
+          fi
+          grep '^src-git pon_drivers ' feeds.conf.default
+          grep '^src-git pon_userspace ' feeds.conf.default
 
       - name: Create candidate PR and dispatch exact Full build
         env:
