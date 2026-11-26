@@ -1,11 +1,6 @@
 name: Upstream candidate evaluation
 
 on:
-  push:
-    branches:
-      - epon1g-nokia-xg-040g-md
-    paths:
-      - .github/workflows/upstream-update.yml
   schedule:
     - cron: "23 4 * * 1,4"
   workflow_dispatch:
