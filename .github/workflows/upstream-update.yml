@@ -119,13 +119,18 @@ jobs:
           if ! git diff --cached --quiet; then
             git commit -m "upstream: update audited PON feed pins"
           fi
-          branch="upstream-candidate-${{ github.run_id }}"
+          branch="upstream-candidate"
           candidate="$(git rev-parse HEAD)"
-          git push origin "HEAD:refs/heads/$branch"
+          git push --force origin "HEAD:refs/heads/$branch"
           test -n "${GH_TOKEN:-}"
-          gh pr create --base epon1g-nokia-xg-040g-md --head "$branch" \
-            --title "upstream: audited compatible update" \
-            --body "Candidate generated after upstream history and PON feed compatibility checks. Review the commit list and source diff before merging. Firmware Full is a separate manual action."
+          existing_pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$branch" --base epon1g-nokia-xg-040g-md --json number --jq '.[0].number // empty')"
+          if [ -z "$existing_pr" ]; then
+            gh pr create --base epon1g-nokia-xg-040g-md --head "$branch" \
+              --title "upstream: compatible source update" \
+              --body "Candidate generated after upstream history and PON feed compatibility checks. Review the commit list and source diff before merging. Firmware Full is a separate manual action."
+          else
+            echo "Updated existing upstream candidate PR #$existing_pr."
+          fi
           printf 'candidate=%s\nsha=%s\n' "$branch" "$candidate" > upstream-report/candidate.txt
 
       - name: Upload audit report
