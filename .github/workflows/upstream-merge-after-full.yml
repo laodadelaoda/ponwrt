@@ -1,4 +1,4 @@
-name: Merge upstream candidate after Full validation
+name: Validate upstream candidate after Full
 
 on:
   push:
@@ -13,7 +13,6 @@ on:
       - completed
 
 permissions:
-  contents: write
   pull-requests: write
   actions: write
 
@@ -75,11 +74,11 @@ jobs:
             echo "Full already active or successful for candidate SHA $head_sha; no duplicate dispatch."
           fi
 
-  merge:
+  verify:
     if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'upstream-candidate-')
     runs-on: ubuntu-24.04
     steps:
-      - name: Verify exact successful Full run and merge its PR
+      - name: Verify exact successful Full run and report manual merge readiness
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -121,5 +120,5 @@ jobs:
 
           current_pr_head="$(gh pr view "$number" --repo "$GH_REPO" --json headRefOid --jq .headRefOid)"
           test "$current_pr_head" = "$CANDIDATE_SHA"
-          echo "Exact Full SHA is current and validated; merging PR #$number."
-          gh pr merge "$number" --repo "$GH_REPO" --squash --delete-branch
+          echo "Exact Full SHA $CANDIDATE_SHA is current and validated."
+          echo "PR #$number is ready for manual review and merge; no automatic merge is performed."
