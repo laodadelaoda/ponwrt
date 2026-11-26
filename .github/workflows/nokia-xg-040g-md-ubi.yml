@@ -73,9 +73,15 @@ jobs:
           ./scripts/feeds update -a
 
           check_feed() {
-            local name="$1" expected_url="$2" expected_sha="$3"
-            local actual_url actual_sha
+            local name="$1" expected_url="$2"
+            local spec configured_url expected_sha actual_url actual_sha
             test -d "feeds/$name/.git"
+            spec="$(awk -v name="$name" '$1 == "src-git" && $2 == name { print $3 }' feeds.conf.default)"
+            test -n "$spec"
+            configured_url="${spec%%^*}"
+            expected_sha="${spec##*^}"
+            [[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]]
+            test "$configured_url" = "$expected_url"
             actual_url="$(git -C "feeds/$name" remote get-url origin)"
             actual_sha="$(git -C "feeds/$name" rev-parse HEAD)"
             test "$actual_url" = "$expected_url"
@@ -83,8 +89,8 @@ jobs:
             printf '%s SHA: %s\n%s URL: %s\n' "$name" "$actual_sha" "$name" "$actual_url" | tee -a source-revisions.txt
           }
 
-          check_feed pon_drivers https://github.com/laodadelaoda/openwrt-pon-drivers.git e4a43262a7dbf9abe269e5661e81dc302a37d822
-          check_feed pon_userspace https://github.com/laodadelaoda/openwrt-pon-userspace.git a903fcc80f4b89f9b9e59a02d3ba1fc5550819a5
+          check_feed pon_drivers https://github.com/laodadelaoda/openwrt-pon-drivers.git
+          check_feed pon_userspace https://github.com/laodadelaoda/openwrt-pon-userspace.git
 
           ./scripts/feeds install -a
 
