@@ -2,42 +2,18 @@ name: Build Nokia XG-040G-MD UBI (AN7581)
 run-name: Nokia XG-040G-MD UBI build
 
 on:
-  push:
-    branches:
-      - epon1g-nokia-xg-040g-md
-    paths:
-      - configs/an7581.config
-      - configs/release.config
-      - feeds.conf.default
-      - package/boot/arm-trusted-firmware-airoha/**
-      - package/boot/uboot-airoha/**
-      - package/kernel/**
-      - include/kernel*.mk
-      - scripts/feeds
-      - target/linux/airoha/**
-      - target/linux/generic/**
-  pull_request:
-    branches:
-      - epon1g-nokia-xg-040g-md
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# A PR has one concurrency slot regardless of its changing head SHA.
-# A newer candidate replaces and cancels any older in-flight Full build.
+# Manual Full builds are serialized; a second dispatch never cancels an active build.
 concurrency:
-  group: nokia-xg-040g-md-ubi-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: nokia-xg-040g-md-ubi
+  cancel-in-progress: false
 
 jobs:
   build:
-    if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && !startsWith(github.head_ref, 'upstream-candidate-'))
     name: AN7581 / Nokia XG-040G-MD UBI
     runs-on: ubuntu-24.04
     timeout-minutes: 360
@@ -48,21 +24,6 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-
-      - name: Verify candidate PR head SHA
-        if: github.event_name == 'pull_request'
-        env:
-          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          # The PR workflow checks out GitHub's synthetic merge commit.
-          # Do not assume either parent is present in the shallow checkout.
-          git fetch --no-tags --depth=1 origin "$EXPECTED_HEAD_SHA"
-          actual_head="$(git rev-parse FETCH_HEAD)"
-          test "$actual_head" = "$EXPECTED_HEAD_SHA"
-          git cat-file -e "$actual_head^{commit}"
-          echo "Candidate PR head SHA: $actual_head" | tee -a source-revisions.txt
 
       - name: Free build space
         run: |
@@ -120,101 +81,6 @@ jobs:
           check_feed pon_userspace https://github.com/laodadelaoda/openwrt-pon-userspace.git
 
           ./scripts/feeds install -a
-
-      - name: Verify candidate source lock
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ ! -f ponwrt-source-lock.json ]; then
-            if [[ "${GITHUB_REF_NAME}" == upstream-candidate-* ]]; then
-              echo "Upstream candidate is missing ponwrt-source-lock.json" >&2
-              exit 1
-            fi
-            echo "No source lock on the existing base revision; legacy build path."
-            exit 0
-          fi
-
-          python3 - <<'PY'
-          import hashlib
-          import json
-          import re
-          import subprocess
-          from pathlib import Path
-
-          lock = json.loads(Path("ponwrt-source-lock.json").read_text())
-          if lock.get("schema") != 1:
-              raise SystemExit("Unsupported source lock schema")
-
-          def sha256(path):
-              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-          if lock["inputs"]["feeds_conf_default_sha256"] != sha256("feeds.conf.default"):
-              raise SystemExit("feeds.conf.default differs from the candidate source lock")
-
-          patch_hash = hashlib.sha256()
-          names = subprocess.check_output(
-              ["git", "ls-files", "-z", "--", "*.patch"]
-          ).split(b"\0")
-          for name in sorted(x for x in names if x):
-              patch_hash.update(name)
-              patch_hash.update(b"\0")
-              patch_hash.update(hashlib.sha256(Path(name.decode()).read_bytes()).digest())
-          if lock["inputs"]["tracked_patch_inventory_sha256"] != patch_hash.hexdigest():
-              raise SystemExit("Tracked patch inventory differs from the candidate source lock")
-
-          for name in ("immortalwrt", "ponwrt"):
-              commit = lock["sources"][name]["commit"]
-              if not re.fullmatch(r"[0-9a-f]{40}", commit):
-                  raise SystemExit(f"Invalid {name} upstream commit in source lock")
-              # The candidate integrates these upstream tips into its own history.
-              subprocess.run(
-                  ["git", "merge-base", "--is-ancestor", commit, "HEAD"],
-                  check=True,
-              )
-
-          expected_repositories = {
-              "pon_drivers": {
-                  "upstream_repository": "pbs05/openwrt-pon-drivers",
-                  "fork_repository": "laodadelaoda/openwrt-pon-drivers",
-                  "feed_url": "https://github.com/laodadelaoda/openwrt-pon-drivers.git",
-              },
-              "pon_userspace": {
-                  "upstream_repository": "pbs05/openwrt-pon-userspace",
-                  "fork_repository": "laodadelaoda/openwrt-pon-userspace",
-                  "feed_url": "https://github.com/laodadelaoda/openwrt-pon-userspace.git",
-              },
-          }
-          for name, expected in expected_repositories.items():
-              source = lock["sources"][name]
-              for key in ("upstream_commit", "fork_commit"):
-                  if not re.fullmatch(r"[0-9a-f]{40}", source[key]):
-                      raise SystemExit(f"Invalid {name}.{key} in source lock")
-              if source["upstream_repository"] != expected["upstream_repository"]:
-                  raise SystemExit(f"{name}: unexpected upstream repository")
-              if source["fork_repository"] != expected["fork_repository"]:
-                  raise SystemExit(f"{name}: unexpected fork repository")
-              spec = None
-              for line in Path("feeds.conf.default").read_text().splitlines():
-                  fields = line.split()
-                  if len(fields) >= 3 and fields[0] == "src-git" and fields[1] == name:
-                      spec = fields[2]
-                      break
-              if not spec or "^" not in spec:
-                  raise SystemExit(f"{name}: missing exact feed pin")
-              configured_url, configured_commit = spec.rsplit("^", 1)
-              if configured_url != expected["feed_url"]:
-                  raise SystemExit(f"{name}: unexpected feeds.conf.default URL")
-              if configured_url != source["feed"]["url"] or configured_commit != source["feed"]["commit"]:
-                  raise SystemExit(f"{name}: feeds.conf.default pin differs from source lock")
-              if not re.fullmatch(r"[0-9a-f]{40}", configured_commit):
-                  raise SystemExit(f"{name}: invalid feed commit in source lock")
-
-          print("Source lock: PASS")
-          print("Source lock SHA256:", sha256("ponwrt-source-lock.json"))
-          print("Tracked patch inventory SHA256:", patch_hash.hexdigest())
-          PY
-          sha256sum ponwrt-source-lock.json | tee source-lock-sha256.txt
-          cat source-lock-sha256.txt >> source-revisions.txt
 
       - name: Derive a single-device configuration
         shell: bash
@@ -568,7 +434,6 @@ jobs:
             echo "Built at (UTC): $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
             echo 'Source revisions and lock:'
             cat source-revisions.txt
-            if [ -f source-lock-sha256.txt ]; then cat source-lock-sha256.txt; fi
             echo 'Artifact SHA256:'
             cat output/SHA256SUMS
             echo "Downloaded source files SHA256 entries: $(wc -l < output/SOURCE-ARCHIVES-SHA256SUMS)"
@@ -601,8 +466,6 @@ jobs:
           name: ponwrt-nokia-xg-040g-md-ubi-build-diagnostics
           path: |
             source-revisions.txt
-            source-lock-sha256.txt
-            ponwrt-source-lock.json
             single-device-config-check.txt
             download.log
             eip93-patch-replay.log
