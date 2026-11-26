@@ -528,6 +528,7 @@ jobs:
           install -m 0644 "$sysupgrade" output/nokia_xg-040g-md-ubi-sysupgrade.itb
           install -m 0644 "$fip" output/bl31-uboot.fip
           install -m 0644 "$preloader" output/preloader.bin
+          find dl -type f -print0 | sort -z | xargs -0 -r sha256sum > output/SOURCE-ARCHIVES-SHA256SUMS
           sha256sum output/nokia_xg-040g-md-ubi-sysupgrade.itb output/bl31-uboot.fip output/preloader.bin > output/SHA256SUMS
           find output/kmods -maxdepth 1 -type f -name '*.apk' -print0 | sort -z | xargs -0 -r sha256sum >> output/SHA256SUMS
           {
@@ -541,6 +542,8 @@ jobs:
             if [ -f source-lock-sha256.txt ]; then cat source-lock-sha256.txt; fi
             echo 'Artifact SHA256:'
             cat output/SHA256SUMS
+            echo "Downloaded source files SHA256 entries: $(wc -l < output/SOURCE-ARCHIVES-SHA256SUMS)"
+            echo 'Downloaded source archive SHA256 manifest: output/SOURCE-ARCHIVES-SHA256SUMS'
             echo 'EN7572 firmware integration:'
             cat ponwrt-en7572-firmware-integration.txt
             echo 'Airoha TRNG / KASLR seed build path: PASS'
@@ -579,6 +582,7 @@ jobs:
             ponwrt-kmod-build-info.txt
             output/kmods/BUILD-INFO.txt
             output/kmods/SHA256SUMS
+            output/SOURCE-ARCHIVES-SHA256SUMS
             output/BUILD-INFO.txt
             eip93-module-dependencies.txt
             build.log
