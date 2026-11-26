@@ -29,7 +29,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: nokia-xg-040g-md-ubi-${{ github.ref }}
+  group: nokia-xg-040g-md-ubi-${{ github.event.pull_request.head.sha || github.ref }}
   cancel-in-progress: false
 
 jobs:
