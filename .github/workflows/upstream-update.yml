@@ -113,10 +113,14 @@ jobs:
 
       - name: Create candidate PR and dispatch exact Full build
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.UPSTREAM_PR_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::UPSTREAM_PR_TOKEN secret is required. GITHUB_TOKEN is blocked by this repository's Actions setting from creating pull requests."
+            exit 1
+          fi
           base_sha="$(git rev-parse refs/remotes/origin/epon1g-nokia-xg-040g-md)"
           git add -u
           git add feeds.conf.default
