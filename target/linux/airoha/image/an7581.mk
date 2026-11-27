@@ -380,6 +380,7 @@ endef
 define Device/nokia_xg-040g-md-ubi
   $(call Device/nokia_xg-040g-md-common)
   DEVICE_VARIANT := (UBI)
+  DEVICE_PACKAGES += kmod-crypto-hw-eip93
   DEVICE_DTS := an7581-nokia_xg-040g-md-ubi
   SUPPORTED_DEVICES += nokia,xg-040g-md-ubi-usb-sfp
   $(call Device/nokia_xg-040g-md-ubi-images)
