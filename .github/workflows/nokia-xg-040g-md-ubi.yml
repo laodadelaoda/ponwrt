@@ -272,7 +272,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t roots < <(find build_dir -type d -path '*/linux-airoha_an7581/target-dir-*' -print)
+          mapfile -t linux_build_dirs < <(find build_dir -type d -name 'linux-airoha_an7581' -print)
+          if [ "${#linux_build_dirs[@]}" -ne 1 ]; then
+            printf 'Expected exactly one AN7581 Linux build directory; found %s\\n' "${#linux_build_dirs[@]}" >&2
+            printf '%s\\n' "${linux_build_dirs[@]}" >&2
+            exit 1
+          fi
+          mapfile -t roots < <(find "${linux_build_dirs[0]}" -mindepth 1 -maxdepth 1 -type d -name 'target-dir-*' -print)
           if [ "${#roots[@]}" -ne 1 ]; then
             printf 'Expected exactly one completed AN7581 image root; found %s\n' "${#roots[@]}" >&2
             printf '%s\n' "${roots[@]}" >&2
