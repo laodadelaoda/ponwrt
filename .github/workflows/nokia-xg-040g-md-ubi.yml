@@ -272,33 +272,28 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          image_dir='bin/targets/airoha/an7581'
-          mapfile -t manifests < <(find "$image_dir" -maxdepth 1 -type f -name '*.manifest' -print | sort)
-          if [ "${#manifests[@]}" -eq 0 ]; then
-            echo 'No AN7581 image manifests found' >&2
+          mapfile -t roots < <(find build_dir -type d -path '*/linux-airoha_an7581/target-dir-*' -print)
+          if [ "${#roots[@]}" -ne 1 ]; then
+            printf 'Expected exactly one completed AN7581 image root; found %s\\n' "${#roots[@]}" >&2
+            printf '%s\\n' "${roots[@]}" >&2
             exit 1
           fi
-          manifest_match=''
-          for manifest in "${manifests[@]}"; do
-            if grep -Eq '^kmod-crypto-hw-eip93([[:space:]]|$)' "$manifest"; then
-              manifest_match="$manifest"
-              break
-            fi
-          done
-          if [ -z "$manifest_match" ]; then
-            echo 'kmod-crypto-hw-eip93 is missing from Nokia firmware manifests' >&2
+          image_root="${roots[0]}"
+          installed_db="$image_root/lib/apk/db/installed"
+          if [ ! -s "$installed_db" ] || ! grep -qx 'P:kmod-crypto-hw-eip93' "$installed_db"; then
+            echo 'kmod-crypto-hw-eip93 is not installed in the Nokia image root' >&2
             exit 1
           fi
-          mapfile -t modules < <(find staging_dir -type f -path '*/root-*/lib/modules/*/crypto-hw-eip93.ko' -print)
+          mapfile -t modules < <(find "$image_root" -type f -path '*/lib/modules/*/crypto-hw-eip93.ko' -print)
           if [ "${#modules[@]}" -ne 1 ] || [ ! -s "${modules[0]:-}" ]; then
-            printf 'Expected exactly one non-empty staged EIP93 module; found %s\n' "${#modules[@]}" >&2
-            printf '%s\n' "${modules[@]}" >&2
+            printf 'Expected exactly one non-empty EIP93 module in the Nokia image root; found %s\\n' "${#modules[@]}" >&2
+            printf '%s\\n' "${modules[@]}" >&2
             exit 1
           fi
           {
             echo 'EIP93 Nokia XG-040G-MD UBI firmware integration: PASS'
-            echo "Image manifest: $manifest_match"
-            grep -E '^kmod-crypto-hw-eip93([[:space:]]|$)' "$manifest_match"
+            echo "Image root: $image_root"
+            grep -x 'P:kmod-crypto-hw-eip93' "$installed_db"
             sha256sum "${modules[0]}"
           } | tee eip93-firmware-integration.txt
 
