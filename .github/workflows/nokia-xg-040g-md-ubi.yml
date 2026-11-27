@@ -274,8 +274,8 @@ jobs:
           set -euo pipefail
           mapfile -t roots < <(find build_dir -type d -path '*/linux-airoha_an7581/target-dir-*' -print)
           if [ "${#roots[@]}" -ne 1 ]; then
-            printf 'Expected exactly one completed AN7581 image root; found %s\\n' "${#roots[@]}" >&2
-            printf '%s\\n' "${roots[@]}" >&2
+            printf 'Expected exactly one completed AN7581 image root; found %s\n' "${#roots[@]}" >&2
+            printf '%s\n' "${roots[@]}" >&2
             exit 1
           fi
           image_root="${roots[0]}"
@@ -286,8 +286,8 @@ jobs:
           fi
           mapfile -t modules < <(find "$image_root" -type f -path '*/lib/modules/*/crypto-hw-eip93.ko' -print)
           if [ "${#modules[@]}" -ne 1 ] || [ ! -s "${modules[0]:-}" ]; then
-            printf 'Expected exactly one non-empty EIP93 module in the Nokia image root; found %s\\n' "${#modules[@]}" >&2
-            printf '%s\\n' "${modules[@]}" >&2
+            printf 'Expected exactly one non-empty EIP93 module in the Nokia image root; found %s\n' "${#modules[@]}" >&2
+            printf '%s\n' "${modules[@]}" >&2
             exit 1
           fi
           {
@@ -441,7 +441,7 @@ jobs:
           test -s "$kernel_dir/lib/crypto/libmd5.ko"
           eip93_module="$kernel_dir/drivers/crypto/inside-secure/eip93/crypto-hw-eip93.ko"
           eip93_deps="$(modinfo -F depends "$eip93_module")"
-          printf '%s\\n' "$eip93_deps" | tee eip93-module-dependencies.txt
+          printf '%s\n' "$eip93_deps" | tee eip93-module-dependencies.txt
           for provider in libdes md5; do
             case ",$eip93_deps," in
               *",$provider,"*) ;;
