@@ -268,6 +268,40 @@ jobs:
             sha256sum "$en7572_ko" "$frontend_ko" "$firmware_pm" "$firmware_dm"
           } | tee ponwrt-en7572-firmware-integration.txt
 
+      - name: Verify EIP93 is integrated into Nokia XG-040G-MD UBI firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_dir='bin/targets/airoha/an7581'
+          mapfile -t manifests < <(find "$image_dir" -maxdepth 1 -type f -name '*.manifest' -print | sort)
+          if [ "${#manifests[@]}" -eq 0 ]; then
+            echo 'No AN7581 image manifests found' >&2
+            exit 1
+          fi
+          manifest_match=''
+          for manifest in "${manifests[@]}"; do
+            if grep -Eq '^kmod-crypto-hw-eip93([[:space:]]|$)' "$manifest"; then
+              manifest_match="$manifest"
+              break
+            fi
+          done
+          if [ -z "$manifest_match" ]; then
+            echo 'kmod-crypto-hw-eip93 is missing from Nokia firmware manifests' >&2
+            exit 1
+          fi
+          mapfile -t modules < <(find staging_dir -type f -path '*/root-*/lib/modules/*/crypto-hw-eip93.ko' -print)
+          if [ "${#modules[@]}" -ne 1 ] || [ ! -s "${modules[0]:-}" ]; then
+            printf 'Expected exactly one non-empty staged EIP93 module; found %s\n' "${#modules[@]}" >&2
+            printf '%s\n' "${modules[@]}" >&2
+            exit 1
+          fi
+          {
+            echo 'EIP93 Nokia XG-040G-MD UBI firmware integration: PASS'
+            echo "Image manifest: $manifest_match"
+            grep -E '^kmod-crypto-hw-eip93([[:space:]]|$)' "$manifest_match"
+            sha256sum "${modules[0]}"
+          } | tee eip93-firmware-integration.txt
+
       - name: Collect standalone PonWrt kmods from native build
         shell: bash
         run: |
