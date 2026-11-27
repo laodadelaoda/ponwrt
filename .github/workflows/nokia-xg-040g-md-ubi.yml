@@ -441,7 +441,7 @@ jobs:
           test -s "$kernel_dir/lib/crypto/libmd5.ko"
           eip93_module="$kernel_dir/drivers/crypto/inside-secure/eip93/crypto-hw-eip93.ko"
           eip93_deps="$(modinfo -F depends "$eip93_module")"
-          printf '%s\n' "$eip93_deps" | tee eip93-module-dependencies.txt
+          printf '%s\\\\n' "$eip93_deps" | tee eip93-module-dependencies.txt
           for provider in libdes md5; do
             case ",$eip93_deps," in
               *",$provider,"*) ;;
