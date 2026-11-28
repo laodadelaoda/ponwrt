@@ -91,7 +91,10 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
  };
  
  static struct mtk_pcs_lynxi *pcs_to_mtk_pcs_lynxi(struct phylink_pcs *pcs)
-@@ -105,26 +138,6 
+@@ -105,26 +138,6 @@ static unsigned int mtk_pcs_lynxi_inband
+ 	}
+ }
+ 
 -static void mtk_pcs_lynxi_get_state(struct phylink_pcs *pcs,
 -				    unsigned int neg_mode,
 -				    struct phylink_link_state *state)
@@ -111,6 +114,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 -					 FIELD_GET(SGMII_LPA, adv));
 -}
 -
+ static int mtk_pcs_config_polarity
 @@ static unsigned int mtk_pcs_lynxi_inband
  	}
  }
