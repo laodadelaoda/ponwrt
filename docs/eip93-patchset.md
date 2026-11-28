@@ -14,7 +14,7 @@ OpenWrt kernel patch application.
 | 1 | `927-crypto-eip93-per-request-sa-record.patch` | Per-request aligned SA records; removes shared-transform request mutation |
 | 2 | `928-crypto-eip93-dma-state-and-idr-fix.patch` | Cipher state DMA direction, IDR allocation failure handling and synchronous unwind |
 | 3 | `929-crypto-eip93-enforce-32bit-dma-mask.patch` | Enforce the 32-bit streaming/coherent DMA address limit |
-| 4 | `930-crypto-eip93-unwind-sg-copies-on-sync-failure.patch` | Release driver-owned SG copies on synchronous exits |
+| 4 | `930a-crypto-eip93-unwind-sg-copies-on-sync-failure.patch` | Release driver-owned SG copies on synchronous exits |
 | 5 | `931-crypto-eip93-unwind-request-idr-and-state-dma.patch` | Track successful cipher state DMA mappings before unmapping |
 | 6 | `932-crypto-eip93-map-sa-state-bidirectionally.patch` | Use bidirectional DMA mapping for mutable hash state |
 | 7 | `933-crypto-eip93-guard-hash-dma-cleanup.patch` | Track hash data, SA and state mapping ownership |
@@ -31,8 +31,14 @@ OpenWrt kernel patch application.
 The missing sequence numbers are intentional: patch 926 (small-request
 software fallback), 934 (a malformed duplicate result guard superseded by
 935b), and 940 are not part of the current series. Do not recreate these files
-merely to make numbering contiguous. The current design keeps AES-CTR available to the EIP93 path used
-by the AF_ALG/GCM composition.
+merely to make numbering contiguous. The current design keeps AES-CTR available
+to the EIP93 path used by the AF_ALG/GCM composition.
+
+The SG-cleanup patch uses the `930a-` prefix because this directory already
+contains an unrelated `930-Revert-Revert-Revert-driver-core-Set-fw_devlink-on-b.patch`.
+The suffix makes the EIP93 patch's position unambiguous in the filename-sorted
+patch application order: after the existing `930-` patch and before `931-`.
+Its patch contents are unchanged.
 
 ## Dependency groups
 
@@ -46,8 +52,7 @@ by the AF_ALG/GCM composition.
 
 IDR allocation is bounded by `EIP93_RING_NUM - 1`, matching the maximum
 number of outstanding entries in the one-slot-empty descriptor ring. The
-The obsolete 16-bit-wide IDR expansion is not part of the current series.
-IDR allocation remains bounded by the native ring capacity.
+obsolete 16-bit-wide IDR expansion is not part of the current series.
 
 ## Rebase and acceptance requirements
 
@@ -66,8 +71,8 @@ IDR allocation remains bounded by the native ring capacity.
    Nokia XG-040G-MD hardware validation as separate results.
 
 This index does not claim that replay, compilation or device testing has
-passed. The current patch edits still require the full ordered replay and
-native build to establish those results.
+passed. The complete ordered series still requires replay against the exact
+Linux v6.18.60 source and a native build to establish those results.
 
 
 ## AN7581 integration outside the patch series
