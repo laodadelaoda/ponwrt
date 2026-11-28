@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Rebuild the EIP93 patch series as one patch per touched source file."""
+# Keep all source mutation behind complete replay and equivalence verification.
 from __future__ import annotations
 import hashlib, re, shutil, subprocess, tempfile
 from pathlib import Path
