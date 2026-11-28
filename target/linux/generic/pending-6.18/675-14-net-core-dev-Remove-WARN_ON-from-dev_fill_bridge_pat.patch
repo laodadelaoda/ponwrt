@@ -19,7 +19,7 @@ Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
 
 --- a/net/core/dev.c
 +++ b/net/core/dev.c
-@@ -798,7 +798,7 @@ int dev_fill_bridge_path(struct net_devi
+@@ -811,7 +811,7 @@ int dev_fill_bridge_path(struct net_devi
  	if (br_dev->netdev_ops->ndo_fill_forward_path(ctx, path) < 0)
  		return -1;
  
