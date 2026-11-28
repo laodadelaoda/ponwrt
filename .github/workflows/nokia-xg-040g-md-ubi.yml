@@ -138,7 +138,7 @@ jobs:
             printf '%s\n' "$active_after"
           } | tee single-device-config-check.txt
 
-      - name: EIP93 exact patch replay gate before compilation
+      - name: Airoha and EIP93 exact patch replay gate before compilation
         shell: bash
         run: |
           set -euo pipefail
@@ -209,11 +209,92 @@ jobs:
           print(f"PASS: all {len(expected)} EIP93 patches applied once in order, zero fuzz/offset/reject.")
           PY
 
-          expected_hash='3c2f44ef6acc021a7ad444d9a2e6ec1ef488ff09368793d0004a6080f69d621e'
-          actual_hash="$(sha256sum dl/linux-6.18.60.tar.xz | awk '{print $1}')"
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          candidates = list(Path("build_dir").glob(
+              "target-*/linux-*/linux-6.18.65/drivers/crypto/inside-secure/eip93/eip93-regs.h"
+          ))
+          if len(candidates) != 1:
+              raise SystemExit(
+                  f"Expected one prepared Linux 6.18.65 EIP93 register header, found: {candidates}"
+              )
+          header = candidates[0]
+          text = header.read_text()
+          match = re.search(
+              r"^\s*#define\s+EIP93_SA_CMD_SSL_MAC\s+BIT\(11\)\s*(?:/\*.*?\*/)?$",
+              text,
+              re.M,
+          )
+          if not match:
+              raise SystemExit(
+                  f"Upstream Linux 6.18.65 EIP93 SSL_MAC definition was not preserved: {header}"
+              )
+          print(f"PASS: upstream EIP93_SA_CMD_SSL_MAC BIT(11) preserved in {header}")
+          PY
+
+          python3 - <<'PY
+          import re
+          from pathlib import Path
+
+          patch_dir = Path("target/linux/airoha/patches-6.18")
+          expected = sorted(p.name for p in patch_dir.glob("*.patch"))
+          if not expected:
+              raise SystemExit("No Airoha 6.18 target patches found")
+
+          lines = Path("eip93-patch-replay.log").read_text(errors="replace").splitlines()
+          sections, order, active = {}, [], None
+          applying = re.compile(r"^Applying .*?/target/linux/airoha/patches-6\.18/([^/\s]+\.patch)(?:\s|$)")
+          for line in lines:
+              match = applying.search(line)
+              if match:
+                  active = match.group(1)
+                  order.append(active)
+                  sections.setdefault(active, []).append(line)
+                  continue
+              if active:
+                  sections[active].append(line)
+
+          missing = [name for name in expected if name not in sections]
+          unexpected = [name for name in order if name not in expected]
+          duplicates = [name for name in expected if order.count(name) != 1]
+          if missing or unexpected or duplicates:
+              raise SystemExit(
+                  f"Airoha patch application mismatch: missing={missing}, "
+                  f"unexpected={unexpected}, duplicates={duplicates}, order={order}"
+              )
+
+          bad = re.compile(
+              r"with fuzz|offset\s+-?\d+\s+lines?|FAILED|malformed patch|"
+              r"Reversed \(or previously applied\)|can't find file to patch|"
+              r"unexpected end of file", re.I
+          )
+          errors = []
+          for name in expected:
+              body = sections[name]
+              if not any("patching file " in line for line in body):
+                  errors.append(f"{name}: no patching-file confirmation")
+              errors.extend(f"{name}: {line}" for line in body if bad.search(line))
+          if errors:
+              raise SystemExit(
+                  "Airoha patch replay failed zero-fuzz/zero-offset gate:\n"
+                  + "\n".join(errors)
+              )
+
+          print(
+              f"PASS: all {len(expected)} Airoha target patches applied once, "
+              "zero fuzz/offset/reject."
+          )
+          print(f"902 SkyHigh patch included: {'902-mtd-spinand-skyhigh-s35ml02-ready-confirm.patch' in expected}")
+          PY
+
+          expected_hash='c92606f956f09dc50b5a0e2af9e86763fce27ada1647de97f8d1ac8cfc95801d'
+          actual_hash="$(sha256sum dl/linux-6.18.65.tar.xz | awk '{print $1}')"
           test "$actual_hash" = "$expected_hash"
           {
-            echo "Linux 6.18.60 source archive SHA256: $actual_hash"
+            echo "Linux 6.18.65 source archive SHA256: $actual_hash"
+            echo "Airoha target patch replay: PASS"
             echo "EIP93 native patch replay: PASS"
             echo "Compilation starts only after this gate."
           } | tee eip93-patch-replay-report.txt
@@ -506,8 +587,8 @@ jobs:
             output/BUILD-INFO.txt
             eip93-module-dependencies.txt
             build.log
-            build_dir/target-*/linux-airoha_an7581/linux-6.18.60/drivers/mtd/nand/spi/core.c
-            build_dir/target-*/linux-airoha_an7581/linux-6.18.60/drivers/mtd/nand/spi/skyhigh.c*
-            build_dir/target-*/linux-airoha_an7581/linux-6.18.60/include/linux/mtd/spinand.h*
+            build_dir/target-*/linux-airoha_an7581/linux-6.18.65/drivers/mtd/nand/spi/core.c
+            build_dir/target-*/linux-airoha_an7581/linux-6.18.65/drivers/mtd/nand/spi/skyhigh.c*
+            build_dir/target-*/linux-airoha_an7581/linux-6.18.65/include/linux/mtd/spinand.h*
           if-no-files-found: ignore
           retention-days: 14
