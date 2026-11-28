@@ -19,7 +19,7 @@ Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
 
 --- a/include/linux/netdevice.h
 +++ b/include/linux/netdevice.h
-@@ -3382,6 +3382,8 @@ void dev_remove_offload(struct packet_of
+@@ -3384,6 +3384,8 @@ void dev_remove_offload(struct packet_of
  
  int dev_get_iflink(const struct net_device *dev);
  int dev_fill_metadata_dst(struct net_device *dev, struct sk_buff *skb);
