@@ -18,7 +18,7 @@ Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
 
 --- a/net/netfilter/nf_flow_table_path.c
 +++ b/net/netfilter/nf_flow_table_path.c
-@@ -108,17 +108,19 @@ static int nft_dev_path_info(const stru
+@@ -109,17 +109,19 @@ static int nft_dev_path_info(const stru
  		switch (path->type) {
  		case DEV_PATH_ETHERNET:
  		case DEV_PATH_IEEE80211:
