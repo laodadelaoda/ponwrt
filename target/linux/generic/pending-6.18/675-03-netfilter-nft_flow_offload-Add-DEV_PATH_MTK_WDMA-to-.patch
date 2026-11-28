@@ -13,8 +13,8 @@ Based on commit ad3380141cf7 from ericwoud/bpir-nftflow-nf-next-20260707.
 Co-authored-by: Eric Woudstra <ericwouds@gmail.com>
 Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
 ---
- net/netfilter/nf_flow_table_path.c | 5 +++++
- 1 file changed, 5 insertions(+)
+ net/netfilter/nf_flow_table_path.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
 
 --- a/net/netfilter/nf_flow_table_path.c
 +++ b/net/netfilter/nf_flow_table_path.c
