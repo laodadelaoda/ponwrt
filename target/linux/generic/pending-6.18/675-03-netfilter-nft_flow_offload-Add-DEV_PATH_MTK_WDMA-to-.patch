@@ -27,7 +27,7 @@ Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
  		case DEV_PATH_VLAN:
  		case DEV_PATH_PPPOE:
  			info->indev = path->dev;
-@@ -122,3 +123,7 @@ static int nft_dev_path_info(const stru
+@@ -124,3 +125,7 @@ static int nft_dev_path_info(const stru
  				i = stack->num_paths;
  				break;
  			}
