@@ -149,7 +149,7 @@ diff --git a/drivers/mtd/nand/spi/skyhigh.c b/drivers/mtd/nand/spi/skyhigh.c
 diff --git a/include/linux/mtd/spinand.h b/include/linux/mtd/spinand.h
 --- a/include/linux/mtd/spinand.h
 +++ b/include/linux/mtd/spinand.h
-@@ -424,1 +424,2 @@
+@@ -424,4 +424,5 @@
 -#define SPINAND_NO_RAW_ACCESS				BIT(4)
 +#define SPINAND_NO_RAW_ACCESS				BIT(4)
 +#define SPINAND_PREMATURE_READY_QUIRK			BIT(5)
