@@ -13,23 +13,25 @@ Based on commit ad3380141cf7 from ericwoud/bpir-nftflow-nf-next-20260707.
 Co-authored-by: Eric Woudstra <ericwouds@gmail.com>
 Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
 ---
- net/netfilter/nf_flow_table_path.c | 4 +++-
- 1 file changed, 3 insertions(+), 1 deletion(-)
+ net/netfilter/nf_flow_table_path.c | 5 +++++
+ 1 file changed, 5 insertions(+)
 
 --- a/net/netfilter/nf_flow_table_path.c
 +++ b/net/netfilter/nf_flow_table_path.c
-@@ -103,6 +103,7 @@ static void nft_dev_path_info(const struct net_device_path_stack *stack,
+@@ -109,7 +109,8 @@ static int nft_dev_path_info(const stru
  		switch (path->type) {
  		case DEV_PATH_ETHERNET:
+ 		case DEV_PATH_IEEE80211:
  		case DEV_PATH_DSA:
 +		case DEV_PATH_MTK_WDMA:
  		case DEV_PATH_VLAN:
  		case DEV_PATH_PPPOE:
  			info->indev = path->dev;
-@@ -114,4 +115,5 @@ static void nft_dev_path_info(const struct net_device_path_stack *stack,
--			if (path->type == DEV_PATH_DSA) {
-+			if (path->type == DEV_PATH_DSA ||
-+			    path->type == DEV_PATH_MTK_WDMA) {
+@@ -122,3 +123,7 @@ static int nft_dev_path_info(const stru
  				i = stack->num_paths;
  				break;
  			}
++			if (path->type == DEV_PATH_MTK_WDMA) {
++				i = stack->num_paths;
++				break;
++			}
