@@ -70,7 +70,7 @@ Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
  }
 --- a/net/netfilter/nf_flow_table_path.c
 +++ b/net/netfilter/nf_flow_table_path.c
-@@ -152,14 +152,23 @@ static int nft_dev_path_info(const stru
+@@ -152,9 +152,18 @@ static int nft_dev_path_info(const stru
  			case DEV_PATH_BR_VLAN_UNTAG_HW:
  				if (info->num_encaps == 0)
  					return -1;
