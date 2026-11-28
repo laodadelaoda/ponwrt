@@ -40,19 +40,54 @@ The suffix makes the EIP93 patch's position unambiguous in the filename-sorted
 patch application order: after the existing `930-` patch and before `931-`.
 Its patch contents are unchanged.
 
-## Dependency groups
+## Dependency groups and retention decisions
 
-- **Request and DMA lifetime:** 927–933. Keep this order; later patches rely
-  on the request-local SA and mapping-ownership fields.
-- **Completion and ring ownership:** 935a, 935b. The paired-ring lock
-  and pinned result-slot design must be reviewed together.
-- **Hash/HMAC transaction:** 935, 936–939, 942. Patch 936 replaces the
-  earlier hash submission path and owns hash request ID allocation/unwind.
-- **AEAD encoding:** 941. It follows request-local SA creation in 927.
+- **Request-local SA and cipher request lifetime:** 927 -> 928 -> 931.
+  Patch 927 establishes per-request SA storage; 928 fixes DMA direction and
+  IDR failure unwinding; 931 prevents unmapping state buffers whose DMA map
+  operation did not succeed. These are complementary, not duplicate fixes.
+- **Synchronous SG cleanup:** 930a. It releases only driver-owned SG copies
+  when validation or submission fails synchronously; it must remain before
+  request completion can be assumed.
+- **Hash DMA ownership:** 932 -> 933. Patch 932 corrects the direction for
+  mutable hash state; 933 records mapping ownership so cleanup only unmaps
+  successful mappings. Keep both.
+- **HMAC and completion/ring ownership:** 935 -> 935a -> 935b. Patch 935
+  establishes valid HMAC key state; 935a makes paired ring pointer updates
+  atomic; 935b keeps a result slot pinned until its contents are copied.
+  Patches 935a and 935b must remain in this order.
+- **Transactional hash path:** 936 depends on the hash ownership fields from
+  933, HMAC key state from 935, and the paired ring lock from 935a. Patches
+  937, 938, 939 and 942 refine the hash path introduced by 936 and must follow
+  it.
+- **AEAD offset encoding:** 941 depends on the request-local SA record from
+  927. It is independent of the hash staging sequence, but remains after 927
+  in the filename-sorted application order.
 
 IDR allocation is bounded by `EIP93_RING_NUM - 1`, matching the maximum
 number of outstanding entries in the one-slot-empty descriptor ring. The
 obsolete 16-bit-wide IDR expansion is not part of the current series.
+
+## Upstream comparison (2026-11-28)
+
+- The PonWrt upstream `pbs05/ponwrt` patch directory currently contains the
+  small-request fallback `926-crypto-eip93-use-AES-fallback-for-small-requests.patch`
+  and the unrelated `930-Revert-Revert-Revert-driver-core-Set-fw_devlink-on-b.patch`.
+  Patch 926 remains intentionally excluded from this device patchset; do not
+  reintroduce it as part of this reorganization.
+- The exact Linux v6.18.60 baseline is stable commit
+  `f45ed76d6791cf72ff1265ee93511175bbbc2f18`.
+  Comparing Linux v6.18.60 with v6.18.64 shows no EIP93 driver files changed
+  in that stable update range.
+- The inspected Torvalds mainline snapshot is commit
+  `7cd8495c0f16275c4f9abe1cef09a7b5fcd6d046` (2026-11-28). The EIP93 driver
+  still has the baseline paired-ring, DMA/IDR and hash-request lifecycle
+  structure; no directly substitutable upstream implementation for the
+  PonWrt fixes was identified in this review.
+
+Therefore, no current patch is being dropped on the assumption that Linux
+6.18.64 or mainline has already absorbed it. This is a source comparison
+decision, not a claim that the patch series has passed replay or testing.
 
 ## Rebase and acceptance requirements
 
@@ -73,7 +108,6 @@ obsolete 16-bit-wide IDR expansion is not part of the current series.
 This index does not claim that replay, compilation or device testing has
 passed. The complete ordered series still requires replay against the exact
 Linux v6.18.60 source and a native build to establish those results.
-
 
 ## AN7581 integration outside the patch series
 
