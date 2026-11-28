@@ -87,7 +87,5 @@ Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
 +				info->num_encaps++;
 +				break;
  			case DEV_PATH_BR_VLAN_TAG:
- 				if (info->num_encaps >= NF_FLOW_TABLE_ENCAP_MAX) {
- 					info->indev = NULL;
- 					break;
- 				}
+ 				if (info->num_encaps >= NF_FLOW_TABLE_ENCAP_MAX)
+ 					return -1;
