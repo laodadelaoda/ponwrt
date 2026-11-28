@@ -513,5 +513,8 @@ jobs:
             output/BUILD-INFO.txt
             eip93-module-dependencies.txt
             build.log
+            build_dir/target-*/linux-airoha_an7581/linux-6.18.60/drivers/mtd/nand/spi/core.c
+            build_dir/target-*/linux-airoha_an7581/linux-6.18.60/drivers/mtd/nand/spi/skyhigh.c*
+            build_dir/target-*/linux-airoha_an7581/linux-6.18.60/include/linux/mtd/spinand.h*
           if-no-files-found: ignore
           retention-days: 14
