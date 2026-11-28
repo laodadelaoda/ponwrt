@@ -57,8 +57,8 @@ Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
  #include <linux/netfilter/nf_conntrack_common.h>
  #include <linux/netfilter/nf_tables.h>
  #include <net/ip.h>
-@@ -324,3 +327,129 @@ int nft_flow_route(const struct nft_pkti
- 	return 0;
+@@ -310,3 +313,129 @@ int nft_flow_route(const struct nft_pkti
+ 	return -ENOENT;
  }
  EXPORT_SYMBOL_GPL(nft_flow_route);
 +
