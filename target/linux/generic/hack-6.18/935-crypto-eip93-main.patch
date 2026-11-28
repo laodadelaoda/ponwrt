@@ -1,54 +1,8 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: PonWrt Maintainers <ponwrt@example.invalid>
-Subject: [PATCH] crypto: eip93: copy result before releasing ring slot
-
-Peek the paired result slot without advancing the read pointers. The single
-completion tasklet waits for PE_READY without holding ring_lock, then copies
-the complete descriptor and advances both read pointers under ring_lock.
-This keeps producers from reusing the slot before the result is copied and
-avoids holding an IRQ-safe spinlock while waiting for the packet engine.
-The Linux 6.18.60 baseline has no DMA read barrier after PE_READY polling;
-this patch adds dma_rmb() before taking the descriptor snapshot.
-
----
---- a/drivers/crypto/inside-secure/eip93/eip93-common.c
-+++ b/drivers/crypto/inside-secure/eip93/eip93-common.c
-@@ -105,6 +105,22 @@
- 		ring->read += ring->offset;
- }
- 
-+void *eip93_peek_descriptor(struct eip93_device *eip93)
-+{
-+	struct eip93_descriptor *cdesc;
-+	void *ptr;
-+
-+	cdesc = eip93_ring_peek_rptr(&eip93->ring->cdr);
-+	if (IS_ERR(cdesc))
-+		return ERR_PTR(-ENOENT);
-+
-+	ptr = eip93_ring_peek_rptr(&eip93->ring->rdr);
-+	if (IS_ERR(ptr))
-+		return ERR_PTR(-ENOENT);
-+
-+	return ptr;
-+}
-+
- int eip93_put_descriptor(struct eip93_device *eip93,
- 			 struct eip93_descriptor *desc)
- {
---- a/drivers/crypto/inside-secure/eip93/eip93-common.h
-+++ b/drivers/crypto/inside-secure/eip93/eip93-common.h
-@@ -9,6 +9,7 @@
- #ifndef _EIP93_COMMON_H_
- #define _EIP93_COMMON_H_
- 
-+void *eip93_peek_descriptor(struct eip93_device *eip93);
- void *eip93_get_descriptor(struct eip93_device *eip93);
- int eip93_put_descriptor(struct eip93_device *eip93, struct eip93_descriptor *desc);
- 
+diff --git a/drivers/crypto/inside-secure/eip93/eip93-main.c b/drivers/crypto/inside-secure/eip93/eip93-main.c
+index 59b19e6ea4df7b89a1c57af452d6432fac9acbdc..6d5fb8a27d5172c2a71bad16d84d9ebd3c24c48a 100644
 --- a/drivers/crypto/inside-secure/eip93/eip93-main.c
 +++ b/drivers/crypto/inside-secure/eip93/eip93-main.c
-@@ -186,7 +186,8 @@
+@@ -186,7 +186,8 @@ static int eip93_register_algs(struct eip93_device *eip93, u32 supported_algo_fl
  static void eip93_handle_result_descriptor(struct eip93_device *eip93)
  {
  	struct crypto_async_request *async;
@@ -58,12 +12,14 @@ this patch adds dma_rmb() before taking the descriptor snapshot.
  	u16 desc_flags, crypto_idr;
  	bool last_entry;
  	int handled, left, err;
-@@ -208,30 +209,44 @@
+@@ -207,31 +208,45 @@ static void eip93_handle_result_descriptor(struct eip93_device *eip93)
+ 	last_entry = false;
  
  	while (left) {
- 		scoped_guard(spinlock_irqsave, &eip93->ring->ring_lock)
+-		scoped_guard(spinlock_irqsave, &eip93->ring->read_lock)
 -			rdesc = eip93_get_descriptor(eip93);
 -		if (IS_ERR(rdesc)) {
++		scoped_guard(spinlock_irqsave, &eip93->ring->ring_lock)
 +			rdesc_slot = eip93_peek_descriptor(eip93);
 +		if (IS_ERR(rdesc_slot)) {
  			dev_err(eip93->dev, "Ndesc: %d nreq: %d\n",
@@ -112,7 +68,7 @@ this patch adds dma_rmb() before taking the descriptor snapshot.
  
  		writel(1, eip93->base + EIP93_REG_PE_RD_COUNT);
  		eip93_irq_clear(eip93, EIP93_INT_RDR_THRESH);
-@@ -254,6 +269,13 @@
+@@ -254,6 +269,13 @@ static void eip93_handle_result_descriptor(struct eip93_device *eip93)
  		idr_remove(&eip93->ring->crypto_async_idr, crypto_idr);
  	}
  
@@ -126,3 +82,23 @@ this patch adds dma_rmb() before taking the descriptor snapshot.
  	/* Parse error in ctrl stat word */
  	err = eip93_parse_ctrl_stat_err(eip93, err);
  
+@@ -420,6 +442,9 @@ static int eip93_crypto_probe(struct platform_device *pdev)
+ 		return -ENOMEM;
+ 
+ 	eip93->dev = dev;
++	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
++	if (ret)
++		return ret;
+ 	platform_set_drvdata(pdev, eip93);
+ 
+ 	eip93->base = devm_platform_ioremap_resource(pdev, 0);
+@@ -447,8 +472,7 @@ static int eip93_crypto_probe(struct platform_device *pdev)
+ 
+ 	tasklet_init(&eip93->ring->done_task, eip93_done_task, (unsigned long)eip93);
+ 
+-	spin_lock_init(&eip93->ring->read_lock);
+-	spin_lock_init(&eip93->ring->write_lock);
++	spin_lock_init(&eip93->ring->ring_lock);
+ 
+ 	spin_lock_init(&eip93->ring->idr_lock);
+ 	idr_init(&eip93->ring->crypto_async_idr);

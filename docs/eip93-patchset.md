@@ -9,65 +9,38 @@ OpenWrt kernel patch application.
 
 ## Current patch order
 
-| Order | Patch | Responsibility |
-|---:|---|---|
-| 1 | `927-crypto-eip93-per-request-sa-record.patch` | Per-request aligned SA records; removes shared-transform request mutation |
-| 2 | `928-crypto-eip93-dma-state-and-idr-fix.patch` | Cipher state DMA direction, IDR allocation failure handling and synchronous unwind |
-| 3 | `929-crypto-eip93-enforce-32bit-dma-mask.patch` | Enforce the 32-bit streaming/coherent DMA address limit |
-| 4 | `930a-crypto-eip93-unwind-sg-copies-on-sync-failure.patch` | Release driver-owned SG copies on synchronous exits |
-| 5 | `931-crypto-eip93-unwind-request-idr-and-state-dma.patch` | Track successful cipher state DMA mappings before unmapping |
-| 6 | `932-crypto-eip93-map-sa-state-bidirectionally.patch` | Use bidirectional DMA mapping for mutable hash state |
-| 7 | `933-crypto-eip93-guard-hash-dma-cleanup.patch` | Track hash data, SA and state mapping ownership |
-| 8 | `935-crypto-eip93-reject-hmac-before-setkey.patch` | Reject HMAC init/import before a successful setkey |
-| 9 | `935a-crypto-eip93-atomic-paired-ring-advance.patch` | Keep command/result ring pointer advancement paired under one lock |
-| 10 | `935b-crypto-eip93-copy-result-before-ring-release.patch` | Pin result slot until descriptor contents have been copied; DMA read barrier and missing async-request guard |
-| 11 | `936-crypto-eip93-transactional-hash-staging.patch` | Stage hash input, map resources and reserve IDR before descriptor publication |
-| 12 | `937-crypto-eip93-validate-imported-hash-state.patch` | Validate imported hash tail length and HMAC key state |
-| 13 | `938-crypto-eip93-check-hash-length-overflow-before-staging.patch` | Reject hash byte-count overflow before staging allocations |
-| 14 | `939-crypto-eip93-respect-hash-request-sleepability.patch` | Prevent sleeping or partial publication for non-sleepable requests |
-| 15 | `941-crypto-eip93-encode-aead-aad-offset.patch` | Encode aligned/unaligned AAD offsets without truncation |
-| 16 | `942-crypto-eip93-reject-zero-length-hash-final.patch` | Reject an inconsistent zero-length final descriptor |
+| Order | Patch | Source file | Original changes retained |
+|---:|---|---|---|
+| 1 | `927-crypto-eip93-aead.patch` | `drivers/crypto/inside-secure/eip93/eip93-aead.c` | 927,930a,941 |
+| 2 | `928-crypto-eip93-cipher.patch` | `drivers/crypto/inside-secure/eip93/eip93-cipher.c` | 927,930a |
+| 3 | `929-crypto-eip93-cipher-h.patch` | `drivers/crypto/inside-secure/eip93/eip93-cipher.h` | 927,930a |
+| 4 | `930a-crypto-eip93-common.patch` | `drivers/crypto/inside-secure/eip93/eip93-common.c` | 928,930a,931,935a,935b,936,939 |
+| 5 | `931-crypto-eip93-common-h.patch` | `drivers/crypto/inside-secure/eip93/eip93-common.h` | 935b,936 |
+| 6 | `932-crypto-eip93-hash.patch` | `drivers/crypto/inside-secure/eip93/eip93-hash.c` | 932,933,935,935a,936,937,938,939,942 |
+| 7 | `933-crypto-eip93-hash-h.patch` | `drivers/crypto/inside-secure/eip93/eip93-hash.h` | 933,935 |
+| 8 | `935-crypto-eip93-main.patch` | `drivers/crypto/inside-secure/eip93/eip93-main.c` | 929,935a,935b |
+| 9 | `935a-crypto-eip93-main-h.patch` | `drivers/crypto/inside-secure/eip93/eip93-main.h` | 935a |
 
-The missing sequence numbers are intentional: patch 926 (small-request
-software fallback), 934 (a malformed duplicate result guard superseded by
-935b), and 940 are not part of the current series. Do not recreate these files
-merely to make numbering contiguous. The current design keeps AES-CTR available
-to the EIP93 path used by the AF_ALG/GCM composition.
+Each patch modifies exactly one EIP93 source file. The original 16 patches
+were replayed in documented order; the nine generated patches were replayed
+against a pristine Linux v6.18.60 tree. Final source files were compared
+byte-for-byte. Patch text was regenerated from final source diffs, not
+concatenated from original unified diffs.
 
-The SG-cleanup patch uses the `930a-` prefix because this directory already
-contains an unrelated `930-Revert-Revert-Revert-driver-core-Set-fw_devlink-on-b.patch`.
-The suffix makes the EIP93 patch's position unambiguous in the filename-sorted
-patch application order: after the existing `930-` patch and before `931-`.
-Its patch contents are unchanged.
+## Retained dependency and behavior groups
 
-## Dependency groups and retention decisions
+- **Cipher request lifetime and DMA:** per-request SA handling, DMA direction,
+  IDR unwind and mapping ownership remain in the cipher/common patches.
+- **SG cleanup and completion ownership:** synchronous SG-copy cleanup, paired
+  ring advancement and result-slot lifetime remain in common/main patches.
+- **Hash DMA and request lifecycle:** mapping ownership, HMAC key-state checks,
+  transactional staging, import validation, overflow checks, sleepability and
+  zero-length-final validation remain in hash/common patches.
+- **AEAD:** AAD offset encoding remains in the AEAD patch and retains its
+  dependency on the request-local SA implementation.
 
-- **Request-local SA and cipher request lifetime:** 927 -> 928 -> 931.
-  Patch 927 establishes per-request SA storage; 928 fixes DMA direction and
-  IDR failure unwinding; 931 prevents unmapping state buffers whose DMA map
-  operation did not succeed. These are complementary, not duplicate fixes.
-- **Synchronous SG cleanup:** 930a. It releases only driver-owned SG copies
-  when validation or submission fails synchronously; it must remain before
-  request completion can be assumed.
-- **Hash DMA ownership:** 932 -> 933. Patch 932 corrects the direction for
-  mutable hash state; 933 records mapping ownership so cleanup only unmaps
-  successful mappings. Keep both.
-- **HMAC and completion/ring ownership:** 935 -> 935a -> 935b. Patch 935
-  establishes valid HMAC key state; 935a makes paired ring pointer updates
-  atomic; 935b keeps a result slot pinned until its contents are copied.
-  Patches 935a and 935b must remain in this order.
-- **Transactional hash path:** 936 depends on the hash ownership fields from
-  933, HMAC key state from 935, and the paired ring lock from 935a. Patches
-  937, 938, 939 and 942 refine the hash path introduced by 936 and must follow
-  it.
-- **AEAD offset encoding:** 941 depends on the request-local SA record from
-  927. It is independent of the hash staging sequence, but remains after 927
-  in the filename-sorted application order.
-
-IDR allocation is bounded by `EIP93_RING_NUM - 1`, matching the maximum
-number of outstanding entries in the one-slot-empty descriptor ring. The
-obsolete 16-bit-wide IDR expansion is not part of the current series.
-
+The original patch numbers in the last table column identify provenance;
+they are not separate patch files after this reorganization.
 ## Upstream comparison (2026-11-28)
 
 - The PonWrt upstream `pbs05/ponwrt` patch directory currently contains the

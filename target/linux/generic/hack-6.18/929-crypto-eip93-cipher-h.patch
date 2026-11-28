@@ -1,0 +1,45 @@
+diff --git a/drivers/crypto/inside-secure/eip93/eip93-cipher.h b/drivers/crypto/inside-secure/eip93/eip93-cipher.h
+index 6e2545ebd8794040cc9588d5e7174f3cdd4396a6..841706899058c572a4242f4825f50657fcaad849 100644
+--- a/drivers/crypto/inside-secure/eip93/eip93-cipher.h
++++ b/drivers/crypto/inside-secure/eip93/eip93-cipher.h
+@@ -9,6 +9,7 @@
+ #define _EIP93_CIPHER_H_
+ 
+ #include "eip93-main.h"
++#include "eip93-regs.h"
+ 
+ struct eip93_crypto_ctx {
+ 	struct eip93_device		*eip93;
+@@ -16,11 +17,8 @@ struct eip93_crypto_ctx {
+ 	struct sa_record		*sa_record;
+ 	u32				sa_nonce;
+ 	int				blksize;
+-	dma_addr_t			sa_record_base;
+ 	/* AEAD specific */
+ 	unsigned int			authsize;
+-	unsigned int			assoclen;
+-	bool				set_assoc;
+ 	enum eip93_alg_type		type;
+ };
+ 
+@@ -32,7 +30,9 @@ struct eip93_cipher_reqctx {
+ 	unsigned int			textsize;
+ 	unsigned int			assoclen;
+ 	unsigned int			authsize;
++	struct sa_record		sa_record __aligned(CRYPTO_DMA_ALIGN);
+ 	dma_addr_t			sa_record_base;
++	bool				sa_record_mapped;
+ 	struct sa_state			*sa_state;
+ 	dma_addr_t			sa_state_base;
+ 	struct eip93_descriptor		*cdesc;
+@@ -46,6 +46,10 @@ struct eip93_cipher_reqctx {
+ 
+ int check_valid_request(struct eip93_cipher_reqctx *rctx);
+ 
++void eip93_cleanup_sg_copies(struct eip93_cipher_reqctx *rctx,
++			     struct scatterlist *reqsrc,
++			     struct scatterlist *reqdst);
++
+ void eip93_unmap_dma(struct eip93_device *eip93, struct eip93_cipher_reqctx *rctx,
+ 		     struct scatterlist *reqsrc, struct scatterlist *reqdst);
+ 

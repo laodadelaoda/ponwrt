@@ -1,0 +1,32 @@
+diff --git a/drivers/crypto/inside-secure/eip93/eip93-hash.h b/drivers/crypto/inside-secure/eip93/eip93-hash.h
+index 556f22fc1dd003a6ced497f08f2775b1e76d84b4..c7df411a5d93ff002b18a47ea93b22426679a562 100644
+--- a/drivers/crypto/inside-secure/eip93/eip93-hash.h
++++ b/drivers/crypto/inside-secure/eip93/eip93-hash.h
+@@ -19,6 +19,7 @@ struct eip93_hash_ctx {
+ 
+ 	u8			ipad[SHA256_BLOCK_SIZE] __aligned(sizeof(u32));
+ 	u8			opad[SHA256_DIGEST_SIZE] __aligned(sizeof(u32));
++	bool			key_set;
+ };
+ 
+ struct eip93_hash_reqctx {
+@@ -33,6 +34,11 @@ struct eip93_hash_reqctx {
+ 	dma_addr_t		sa_record_hmac_base;
+ 	dma_addr_t		sa_state_base;
+ 
++	bool			sa_record_mapped;
++	bool			sa_record_hmac_mapped;
++	bool			sa_state_mapped;
++	bool			data_mapped;
++
+ 	/* Don't enable HASH_FINALIZE when last block is sent */
+ 	bool			partial_hash;
+ 
+@@ -56,6 +62,7 @@ struct mkt_hash_block {
+ 	struct list_head	list;
+ 	u8			data[SHA256_BLOCK_SIZE] __aligned(sizeof(u32));
+ 	dma_addr_t		data_dma;
++	bool			data_mapped;
+ };
+ 
+ struct eip93_hash_export_state {

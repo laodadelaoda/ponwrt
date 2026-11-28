@@ -1,0 +1,14 @@
+diff --git a/drivers/crypto/inside-secure/eip93/eip93-main.h b/drivers/crypto/inside-secure/eip93/eip93-main.h
+index 79b078f0e5dac50afc367ffc9c599b671a6c8c13..0be6e7329939a73169abbc7be83bfa844d780727 100644
+--- a/drivers/crypto/inside-secure/eip93/eip93-main.h
++++ b/drivers/crypto/inside-secure/eip93/eip93-main.h
+@@ -124,8 +124,7 @@ struct eip93_ring {
+ 	/* command/result rings */
+ 	struct eip93_desc_ring		cdr;
+ 	struct eip93_desc_ring		rdr;
+-	spinlock_t			write_lock;
+-	spinlock_t			read_lock;
++	spinlock_t			ring_lock;
+ 	/* aync idr */
+ 	spinlock_t			idr_lock;
+ 	struct idr			crypto_async_idr;
