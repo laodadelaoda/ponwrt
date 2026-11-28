@@ -21,7 +21,7 @@ and this patch requires build and hardware validation before acceptance.
 diff --git a/drivers/mtd/nand/spi/core.c b/drivers/mtd/nand/spi/core.c
 --- a/drivers/mtd/nand/spi/core.c
 +++ b/drivers/mtd/nand/spi/core.c
-@@ -598,6 +598,61 @@
+@@ -599,6 +599,61 @@
  	return status & STATUS_BUSY ? -ETIMEDOUT : 0;
  }
  
@@ -83,7 +83,7 @@ diff --git a/drivers/mtd/nand/spi/core.c b/drivers/mtd/nand/spi/core.c
  static int spinand_read_id_op(struct spinand_device *spinand, u8 naddr,
  			      u8 ndummy, u8 *buf)
  {
-@@ -655,10 +710,10 @@
+@@ -656,10 +711,10 @@
  	if (ret)
  		return ret;
  
@@ -98,7 +98,7 @@ diff --git a/drivers/mtd/nand/spi/core.c b/drivers/mtd/nand/spi/core.c
  	if (ret < 0)
  		return ret;
  
-@@ -702,10 +757,10 @@
+@@ -703,10 +758,10 @@
  	if (ret)
  		return ret;
  
@@ -113,7 +113,7 @@ diff --git a/drivers/mtd/nand/spi/core.c b/drivers/mtd/nand/spi/core.c
  	if (ret)
  		return ret;
  
-@@ -821,8 +876,9 @@
+@@ -822,8 +877,9 @@
  		if (ret)
  			goto end_cont_read;
  
@@ -125,7 +125,7 @@ diff --git a/drivers/mtd/nand/spi/core.c b/drivers/mtd/nand/spi/core.c
  		if (ret < 0)
  			goto end_cont_read;
  
-@@ -1089,10 +1145,10 @@
+@@ -1090,10 +1146,10 @@
  	if (ret)
  		return ret;
  
@@ -159,7 +159,7 @@ diff --git a/drivers/mtd/nand/spi/skyhigh.c b/drivers/mtd/nand/spi/skyhigh.c
 diff --git a/include/linux/mtd/spinand.h b/include/linux/mtd/spinand.h
 --- a/include/linux/mtd/spinand.h
 +++ b/include/linux/mtd/spinand.h
-@@ -417,8 +417,8 @@
+@@ -417,5 +417,6 @@
  #define SPINAND_HAS_CR_FEAT_BIT		BIT(1)
  #define SPINAND_HAS_PROG_PLANE_SELECT_BIT		BIT(2)
  #define SPINAND_HAS_READ_PLANE_SELECT_BIT		BIT(3)
