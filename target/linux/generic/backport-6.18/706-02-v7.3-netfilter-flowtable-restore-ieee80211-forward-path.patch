@@ -34,7 +34,7 @@ Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
 
 --- a/include/linux/netdevice.h
 +++ b/include/linux/netdevice.h
-@@ -878,6 +878,7 @@ enum net_device_path_type {
+@@ -880,6 +880,7 @@ enum net_device_path_type {
  	DEV_PATH_PPPOE,
  	DEV_PATH_DSA,
  	DEV_PATH_MTK_WDMA,
