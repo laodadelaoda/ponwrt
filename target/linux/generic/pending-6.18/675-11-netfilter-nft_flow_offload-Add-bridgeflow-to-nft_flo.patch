@@ -205,7 +205,7 @@ Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
  	struct tcphdr _tcph, *tcph = NULL;
  	struct nf_flow_route route = {};
  	enum ip_conntrack_info ctinfo;
-@@ -111,14 +112,20 @@ static void nft_flow_offload_eval(const
+@@ -109,14 +110,20 @@ static void nft_flow_offload_eval(const
  		goto out;
  
  	dir = CTINFO2DIR(ctinfo);
@@ -229,7 +229,7 @@ Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
  	if (tcph)
  		flow_offload_ct_tcp(ct);
  
-@@ -133,8 +140,10 @@ static void nft_flow_offload_eval(const
+@@ -130,8 +137,10 @@ static void nft_flow_offload_eval(const
  err_flow_add:
  	flow_offload_free(flow);
  err_flow_alloc:
