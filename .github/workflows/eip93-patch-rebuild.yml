@@ -1,6 +1,12 @@
 name: EIP93 Patch Rebuild and Nokia Full Build
 
 on:
+  push:
+    branches:
+      - chore/eip93-patchset-order
+    paths:
+      - .github/workflows/eip93-patch-rebuild.yml
+      - scripts/eip93/rebuild-patchset.py
   workflow_dispatch:
 
 permissions:
@@ -47,7 +53,7 @@ jobs:
         run: |
           set -euxo pipefail
           python3 scripts/eip93/rebuild-patchset.py
-          test "$(find target/linux/generic/hack-6.18 -maxdepth 1 -type f -name '*eip93*.patch' | wc -l)" -eq 9
+          test "$(grep -cE '^\\|[[:space:]]*[0-9]+[[:space:]]*\\|' docs/eip93-patchset.md)" -eq 9
           cat eip93-rebuild-report.txt
 
       - name: Commit verified patch set to candidate branch
