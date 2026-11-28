@@ -18,15 +18,16 @@ Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
 
 --- a/net/netfilter/nf_flow_table_path.c
 +++ b/net/netfilter/nf_flow_table_path.c
-@@ -103,6 +103,7 @@ static void nft_dev_path_info(const stru
+@@ -110,7 +110,8 @@ static int nft_dev_path_info(const stru
  		switch (path->type) {
  		case DEV_PATH_ETHERNET:
+ 		case DEV_PATH_IEEE80211:
  		case DEV_PATH_DSA:
 +		case DEV_PATH_MTK_WDMA:
  		case DEV_PATH_VLAN:
  		case DEV_PATH_PPPOE:
  			info->indev = path->dev;
-@@ -115,6 +116,10 @@ static void nft_dev_path_info(const stru
+@@ -123,6 +124,10 @@ static int nft_dev_path_info(const stru
  				i = stack->num_paths;
  				break;
  			}
