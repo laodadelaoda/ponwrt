@@ -1,0 +1,172 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: PonWrt Maintainers <noreply@github.com>
+Date: Sat, 28 Nov 2026 00:00:00 +0000
+Subject: [PATCH] mtd: spinand: confirm ready state on SkyHigh S35ML02G300
+
+Confirm the ready state a second time for the 256 MiB SkyHigh S35ML02G300.
+The NAND geometry reported by Nokia XG-040G-MD matches this part. Keep the
+quirk scoped to this model; other SkyHigh parts are not covered by the
+available device evidence.
+
+This is a candidate workaround for the reported UBI corrected-bitflip
+scrubs. The premature-ready hypothesis has not been conclusively measured
+and this patch requires build and hardware validation before acceptance.
+
+---
+ drivers/mtd/nand/spi/core.c    | 84 ++++++++++++++++++++++++++++++++++++++++++++++++++++++----------------
+ drivers/mtd/nand/spi/skyhigh.c |  2 +-
+ include/linux/mtd/spinand.h   |  1 +
+ 3 files changed, 72 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/mtd/nand/spi/core.c b/drivers/mtd/nand/spi/core.c
+--- a/drivers/mtd/nand/spi/core.c
++++ b/drivers/mtd/nand/spi/core.c
+@@ -598,6 +598,61 @@
+ 	return status & STATUS_BUSY ? -ETIMEDOUT : 0;
+ }
+ 
++static int spinand_wait_ready_confirmed(struct spinand_device *spinand,
++					unsigned long initial_delay_us,
++					unsigned long poll_delay_us, u8 *s)
++{
++	struct spi_mem_op op = SPINAND_GET_FEATURE_1S_1S_1S_OP(REG_STATUS,
++								       spinand->scratchbuf);
++	unsigned long timeo;
++	unsigned long remaining_us;
++	unsigned int timeout_ms;
++	u8 status;
++	int ret;
++
++	if (!(spinand->flags & SPINAND_PREMATURE_READY_QUIRK))
++		return spinand_wait(spinand, initial_delay_us, poll_delay_us, s);
++
++	timeo = jiffies + msecs_to_jiffies(SPINAND_WAITRDY_TIMEOUT_MS);
++	for (;;) {
++		if (time_after_eq(jiffies, timeo))
++			return -ETIMEDOUT;
++
++		remaining_us = jiffies_to_usecs(timeo - jiffies);
++		if (remaining_us <= initial_delay_us)
++			return -ETIMEDOUT;
++
++		timeout_ms = max_t(unsigned int, 1,
++				   DIV_ROUND_UP(remaining_us - initial_delay_us,
++						1000));
++		ret = spi_mem_poll_status(spinand->spimem, &op, STATUS_BUSY, 0,
++					  initial_delay_us, poll_delay_us,
++					  timeout_ms);
++		if (ret)
++			return ret;
++
++		if (time_after_eq(jiffies, timeo))
++			return -ETIMEDOUT;
++
++		status = *spinand->scratchbuf;
++		ret = spinand_read_status(spinand, &status);
++		if (ret)
++			return ret;
++
++		if (time_after_eq(jiffies, timeo))
++			return -ETIMEDOUT;
++
++		if (!(status & STATUS_BUSY))
++			break;
++
++		initial_delay_us = 0;
++	}
++
++	if (s)
++		*s = status;
++
++	return 0;
++}
+ static int spinand_read_id_op(struct spinand_device *spinand, u8 naddr,
+ 			      u8 ndummy, u8 *buf)
+ {
+@@ -655,10 +710,10 @@
+ 	if (ret)
+ 		return ret;
+ 
+-	ret = spinand_wait(spinand,
+-			   SPINAND_READ_INITIAL_DELAY_US,
+-			   SPINAND_READ_POLL_DELAY_US,
+-			   &status);
++	ret = spinand_wait_ready_confirmed(spinand,
++					   SPINAND_READ_INITIAL_DELAY_US,
++					   SPINAND_READ_POLL_DELAY_US,
++					   &status);
+ 	if (ret < 0)
+ 		return ret;
+ 
+@@ -702,10 +757,10 @@
+ 	if (ret)
+ 		return ret;
+ 
+-	ret = spinand_wait(spinand,
+-			   SPINAND_WRITE_INITIAL_DELAY_US,
+-			   SPINAND_WRITE_POLL_DELAY_US,
+-			   &status);
++	ret = spinand_wait_ready_confirmed(spinand,
++					   SPINAND_WRITE_INITIAL_DELAY_US,
++					   SPINAND_WRITE_POLL_DELAY_US,
++					   &status);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -821,8 +876,9 @@
+ 		if (ret)
+ 			goto end_cont_read;
+ 
+-		ret = spinand_wait(spinand, SPINAND_READ_INITIAL_DELAY_US,
+-				   SPINAND_READ_POLL_DELAY_US, NULL);
++		ret = spinand_wait_ready_confirmed(spinand,
++						   SPINAND_READ_INITIAL_DELAY_US,
++						   SPINAND_READ_POLL_DELAY_US, NULL);
+ 		if (ret < 0)
+ 			goto end_cont_read;
+ 
+@@ -1089,10 +1145,10 @@
+ 	if (ret)
+ 		return ret;
+ 
+-	ret = spinand_wait(spinand,
+-			   SPINAND_ERASE_INITIAL_DELAY_US,
+-			   SPINAND_ERASE_POLL_DELAY_US,
+-			   &status);
++	ret = spinand_wait_ready_confirmed(spinand,
++					   SPINAND_ERASE_INITIAL_DELAY_US,
++					   SPINAND_ERASE_POLL_DELAY_US,
++				   &status);
+ 
+ 	if (!ret && (status & STATUS_ERASE_FAILED))
+ 		ret = -EIO;
+diff --git a/drivers/mtd/nand/spi/skyhigh.c b/drivers/mtd/nand/spi/skyhigh.c
+--- a/drivers/mtd/nand/spi/skyhigh.c
++++ b/drivers/mtd/nand/spi/skyhigh.c
+@@ -104,11 +104,11 @@
+ 	SPINAND_INFO("S35ML02G300",
+ 		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0x25),
+ 		     NAND_MEMORG(1, 2048, 128, 64, 2048, 40, 2, 1, 1),
+ 		     NAND_ECCREQ(6, 32),
+ 		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
+ 					      &write_cache_variants,
+ 					      &update_cache_variants),
+-		     SPINAND_NO_RAW_ACCESS,
++		     SPINAND_NO_RAW_ACCESS | SPINAND_PREMATURE_READY_QUIRK,
+ 		     SPINAND_ECCINFO(&skyhigh_spinand_ooblayout,
+ 				     skyhigh_spinand_ecc_get_status)),
+ 	SPINAND_INFO("S35ML04G300",
+diff --git a/include/linux/mtd/spinand.h b/include/linux/mtd/spinand.h
+--- a/include/linux/mtd/spinand.h
++++ b/include/linux/mtd/spinand.h
+@@ -417,8 +417,8 @@
+ #define SPINAND_HAS_CR_FEAT_BIT		BIT(1)
+ #define SPINAND_HAS_PROG_PLANE_SELECT_BIT		BIT(2)
+ #define SPINAND_HAS_READ_PLANE_SELECT_BIT		BIT(3)
+ #define SPINAND_NO_RAW_ACCESS				BIT(4)
++#define SPINAND_PREMATURE_READY_QUIRK			BIT(5)
+ 
+ /**
+  * struct spinand_ondie_ecc_conf - private SPI-NAND on-die ECC engine structure
+-- 
+2.47.0
