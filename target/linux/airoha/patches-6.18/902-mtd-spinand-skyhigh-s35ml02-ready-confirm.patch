@@ -143,6 +143,9 @@ diff --git a/drivers/mtd/nand/spi/core.c b/drivers/mtd/nand/spi/core.c
 diff --git a/drivers/mtd/nand/spi/skyhigh.c b/drivers/mtd/nand/spi/skyhigh.c
 --- a/drivers/mtd/nand/spi/skyhigh.c
 +++ b/drivers/mtd/nand/spi/skyhigh.c
+@@ -104,1 +104,1 @@
+-	SPINAND_INFO("S35ML02G300",
++	SPINAND_INFO("S35ML02G300",
 @@ -111,1 +111,1 @@ SPINAND_INFO("S35ML02G300")
 -		     SPINAND_NO_RAW_ACCESS,
 +		     SPINAND_NO_RAW_ACCESS | SPINAND_PREMATURE_READY_QUIRK,
