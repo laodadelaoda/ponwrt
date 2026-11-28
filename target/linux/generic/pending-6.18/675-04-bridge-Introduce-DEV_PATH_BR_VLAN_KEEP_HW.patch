@@ -71,9 +71,6 @@ Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
 --- a/net/netfilter/nf_flow_table_path.c
 +++ b/net/netfilter/nf_flow_table_path.c
 @@ -160,3 +160,12 @@
- 			case DEV_PATH_BR_VLAN_TAG:
- 				if (info->num_encaps >= NF_FLOW_TABLE_ENCAP_MAX)
- 					return -1;
 +			case DEV_PATH_BR_VLAN_KEEP_HW:
 +				if (info->num_encaps >= NF_FLOW_TABLE_ENCAP_MAX)
 +					return -1;
@@ -83,3 +80,6 @@ Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
 +				info->encap[info->num_encaps].proto = path->bridge.vlan_proto;
 +				info->num_encaps++;
 +				break;
+ 			case DEV_PATH_BR_VLAN_TAG:
+ 				if (info->num_encaps >= NF_FLOW_TABLE_ENCAP_MAX)
+ 					return -1;
