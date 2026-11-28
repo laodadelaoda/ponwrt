@@ -14,8 +14,8 @@ Signed-off-by: Eric Woudstra <ericwouds@gmail.com>
 Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
 ---
  include/net/netfilter/nf_flow_table.h |  3 +++
- net/netfilter/nf_flow_table_offload.c | 13 +++++++++++++
- 2 files changed, 16 insertions(+)
+ net/netfilter/nf_flow_table_offload.c | 14 ++++++++++++++
+ 2 files changed, 17 insertions(+)
 
 --- a/include/net/netfilter/nf_flow_table.h
 +++ b/include/net/netfilter/nf_flow_table.h
@@ -31,7 +31,7 @@ Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
  			    struct nf_flow_rule *flow_rule);
 --- a/net/netfilter/nf_flow_table_offload.c
 +++ b/net/netfilter/nf_flow_table_offload.c
-@@ -792,6 +792,19 @@ int nf_flow_rule_route_ipv6(struct net *
+@@ -792,6 +792,20 @@ int nf_flow_rule_route_ipv6(struct net *
  }
  EXPORT_SYMBOL_GPL(nf_flow_rule_route_ipv6);
  
@@ -42,7 +42,8 @@ Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
 +	if (nf_flow_rule_route_common(net, flow, dir, flow_rule) < 0)
 +		return -1;
 +
-+	flow_offload_redirect(net, flow, dir, flow_rule);
++	if (flow_offload_redirect(net, flow, dir, flow_rule) < 0)
+		return -1;
 +
 +	return 0;
 +}
