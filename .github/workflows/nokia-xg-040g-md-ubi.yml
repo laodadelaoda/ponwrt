@@ -149,22 +149,15 @@ jobs:
           from pathlib import Path
 
           expected = [
-              "927-crypto-eip93-per-request-sa-record.patch",
-              "928-crypto-eip93-dma-state-and-idr-fix.patch",
-              "929-crypto-eip93-enforce-32bit-dma-mask.patch",
-              "930-crypto-eip93-unwind-sg-copies-on-sync-failure.patch",
-              "931-crypto-eip93-unwind-request-idr-and-state-dma.patch",
-              "932-crypto-eip93-map-sa-state-bidirectionally.patch",
-              "933-crypto-eip93-guard-hash-dma-cleanup.patch",
-              "935-crypto-eip93-reject-hmac-before-setkey.patch",
-              "935a-crypto-eip93-atomic-paired-ring-advance.patch",
-              "935b-crypto-eip93-copy-result-before-ring-release.patch",
-              "936-crypto-eip93-transactional-hash-staging.patch",
-              "937-crypto-eip93-validate-imported-hash-state.patch",
-              "938-crypto-eip93-check-hash-length-overflow-before-staging.patch",
-              "939-crypto-eip93-respect-hash-request-sleepability.patch",
-              "941-crypto-eip93-encode-aead-aad-offset.patch",
-              "942-crypto-eip93-reject-zero-length-hash-final.patch",
+              "927-crypto-eip93-aead.patch",
+              "928-crypto-eip93-cipher.patch",
+              "929-crypto-eip93-cipher-h.patch",
+              "930a-crypto-eip93-common.patch",
+              "931-crypto-eip93-common-h.patch",
+              "932-crypto-eip93-hash.patch",
+              "933-crypto-eip93-hash-h.patch",
+              "935-crypto-eip93-main.patch",
+              "935a-crypto-eip93-main-h.patch",
           ]
           actual_files = sorted(
               p.name for p in Path("target/linux/generic/hack-6.18").glob("*eip93*.patch")
@@ -513,5 +506,8 @@ jobs:
             output/BUILD-INFO.txt
             eip93-module-dependencies.txt
             build.log
+            build_dir/target-*/linux-airoha_an7581/linux-6.18.60/drivers/mtd/nand/spi/core.c
+            build_dir/target-*/linux-airoha_an7581/linux-6.18.60/drivers/mtd/nand/spi/skyhigh.c*
+            build_dir/target-*/linux-airoha_an7581/linux-6.18.60/include/linux/mtd/spinand.h*
           if-no-files-found: ignore
           retention-days: 14
