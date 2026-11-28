@@ -1,0 +1,127 @@
+name: EIP93 Patch Rebuild and Nokia Full Build
+
+on:
+  push:
+    branches:
+      - chore/eip93-patchset-order
+    paths:
+      - scripts/eip93/rebuild-patchset.py
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: eip93-patch-rebuild
+  cancel-in-progress: true
+
+jobs:
+  rebuild-and-build:
+    if: github.ref == 'refs/heads/chore/eip93-patchset-order'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout candidate branch
+        uses: actions/checkout@v4
+        with:
+          ref: chore/eip93-patchset-order
+          fetch-depth: 0
+
+      - name: Verify target branch and install build dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test "$GITHUB_REF" = "refs/heads/chore/eip93-patchset-order"
+          sudo apt-get update
+          sudo apt-get install -y \
+            ack antlr3 asciidoc autoconf automake autopoint binutils bison \
+            build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler \
+            ecj fastjar flex gawk gettext gcc-multilib g++-multilib git gnutls-dev \
+            gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev \
+            libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev \
+            libncurses-dev libpython3-dev libreadline-dev libssl-dev libtool \
+            libyaml-dev libz-dev lld llvm lrzsz mkisofs msmtp nano ninja-build \
+            p7zip p7zip-full patch pkgconf python3 python3-pip python3-ply \
+            python3-docutils python3-pyelftools qemu-utils re2c rsync scons \
+            squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip \
+            vim wget xmlto xxd zlib1g-dev zstd
+          df -h .
+
+      - name: Rebuild EIP93 patches by source file and verify exact replay
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 scripts/eip93/rebuild-patchset.py
+          test "$(grep -c '^| [0-9][0-9]* |' docs/eip93-patchset.md)" -eq 9
+          cat eip93-rebuild-report.txt
+
+      - name: Commit verified patch set to candidate branch
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add target/linux/generic/hack-6.18 docs/eip93-patchset.md
+          if ! git diff --cached --quiet; then
+            git commit -m "Reorganize EIP93 patches by source file"
+            git push origin HEAD:chore/eip93-patchset-order
+          fi
+
+      - name: Update feeds
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Configure Nokia XG-040G-MD only
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cp configs/an7581.config .config
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path(".config")
+          text = p.read_text()
+          text = re.sub(
+              r"^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_[A-Za-z0-9_-]+=y$",
+              lambda m: m.group(0) if m.group(0) == "CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi=y"
+              else "# " + m.group(0)[:-2] + " is not set",
+              text,
+              flags=re.M,
+          )
+          key = "CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi=y"
+          if key not in text:
+              text += "\n" + key + "\n"
+          p.write_text(text)
+          PY
+          make defconfig
+          grep -E '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_.*=y$' .config
+          test "$(grep -c '^| [0-9][0-9]* |' docs/eip93-patchset.md)" -eq 9
+          grep -qx 'CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi=y' .config
+
+      - name: Download sources
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make download -j"$(nproc)"
+
+      - name: Full firmware build
+        shell: bash
+        run: |
+          set -o pipefail
+          make -j"$(nproc)" 2>&1 | tee full-build.log
+
+      - name: Upload EIP93 verification and Nokia firmware artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eip93-patch-rebuild-nokia-full-build
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            eip93-rebuild-report.txt
+            full-build.log
+            target/linux/generic/hack-6.18/*eip93*.patch
+            bin/targets/airoha/an7581/

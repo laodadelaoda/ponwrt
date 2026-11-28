@@ -1,0 +1,101 @@
+diff --git a/drivers/crypto/inside-secure/eip93/eip93-cipher.c b/drivers/crypto/inside-secure/eip93/eip93-cipher.c
+index 1f2d6846610faa00f5105135c1c5e89630daed68..bdc4dd6ac600dfe1b0604235912e0e0a4fc0f626 100644
+--- a/drivers/crypto/inside-secure/eip93/eip93-cipher.c
++++ b/drivers/crypto/inside-secure/eip93/eip93-cipher.c
+@@ -26,6 +26,12 @@ void eip93_skcipher_handle_result(struct crypto_async_request *async, int err)
+ 
+ 	eip93_unmap_dma(eip93, rctx, req->src, req->dst);
+ 	eip93_handle_result(eip93, rctx, req->iv);
++	if (rctx->sa_record_mapped) {
++		dma_unmap_single(eip93->dev, rctx->sa_record_base,
++				 sizeof(rctx->sa_record), DMA_TO_DEVICE);
++		rctx->sa_record_mapped = false;
++		rctx->sa_record_base = 0;
++	}
+ 
+ 	skcipher_request_complete(req, err);
+ }
+@@ -39,11 +45,14 @@ static int eip93_skcipher_send_req(struct crypto_async_request *async)
+ 	err = check_valid_request(rctx);
+ 
+ 	if (err) {
+-		skcipher_request_complete(req, err);
++		eip93_cleanup_sg_copies(rctx, req->src, req->dst);
+ 		return err;
+ 	}
+ 
+-	return eip93_send_req(async, req->iv, rctx);
++	err = eip93_send_req(async, req->iv, rctx);
++	if (err != -EINPROGRESS)
++		eip93_cleanup_sg_copies(rctx, req->src, req->dst);
++	return err;
+ }
+ 
+ /* Crypto skcipher API functions */
+@@ -72,8 +81,6 @@ static void eip93_skcipher_cra_exit(struct crypto_tfm *tfm)
+ {
+ 	struct eip93_crypto_ctx *ctx = crypto_tfm_ctx(tfm);
+ 
+-	dma_unmap_single(ctx->eip93->dev, ctx->sa_record_base,
+-			 sizeof(*ctx->sa_record), DMA_TO_DEVICE);
+ 	kfree(ctx->sa_record);
+ }
+ 
+@@ -153,11 +160,20 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
+ 				crypto_skcipher_blocksize(skcipher)))
+ 			return -EINVAL;
+ 
+-	ctx->sa_record_base = dma_map_single(ctx->eip93->dev, ctx->sa_record,
+-					     sizeof(*ctx->sa_record), DMA_TO_DEVICE);
+-	ret = dma_mapping_error(ctx->eip93->dev, ctx->sa_record_base);
+-	if (ret)
+-		return ret;
++	memcpy(&rctx->sa_record, ctx->sa_record, sizeof(rctx->sa_record));
++	if (IS_DECRYPT(rctx->flags))
++		rctx->sa_record.sa_cmd0_word |= EIP93_SA_CMD_DIRECTION_IN;
++	else
++		rctx->sa_record.sa_cmd0_word &= ~EIP93_SA_CMD_DIRECTION_IN;
++
++	rctx->sa_record_base = dma_map_single(ctx->eip93->dev, &rctx->sa_record,
++					     sizeof(rctx->sa_record), DMA_TO_DEVICE);
++	ret = dma_mapping_error(ctx->eip93->dev, rctx->sa_record_base);
++	if (ret) {
++		rctx->sa_record_base = 0;
++		return -ENOMEM;
++	}
++	rctx->sa_record_mapped = true;
+ 
+ 	rctx->assoclen = 0;
+ 	rctx->textsize = req->cryptlen;
+@@ -167,9 +183,15 @@ static int eip93_skcipher_crypt(struct skcipher_request *req)
+ 	rctx->ivsize = crypto_skcipher_ivsize(skcipher);
+ 	rctx->blksize = ctx->blksize;
+ 	rctx->desc_flags = EIP93_DESC_SKCIPHER;
+-	rctx->sa_record_base = ctx->sa_record_base;
+ 
+-	return eip93_skcipher_send_req(async);
++	ret = eip93_skcipher_send_req(async);
++	if (ret != -EINPROGRESS) {
++		dma_unmap_single(ctx->eip93->dev, rctx->sa_record_base,
++				 sizeof(rctx->sa_record), DMA_TO_DEVICE);
++		rctx->sa_record_mapped = false;
++		rctx->sa_record_base = 0;
++	}
++	return ret;
+ }
+ 
+ static int eip93_skcipher_encrypt(struct skcipher_request *req)
+@@ -186,13 +208,10 @@ static int eip93_skcipher_encrypt(struct skcipher_request *req)
+ 
+ static int eip93_skcipher_decrypt(struct skcipher_request *req)
+ {
+-	struct eip93_crypto_ctx *ctx = crypto_tfm_ctx(req->base.tfm);
+ 	struct eip93_cipher_reqctx *rctx = skcipher_request_ctx(req);
+ 	struct eip93_alg_template *tmpl = container_of(req->base.tfm->__crt_alg,
+ 				struct eip93_alg_template, alg.skcipher.base);
+ 
+-	ctx->sa_record->sa_cmd0_word |= EIP93_SA_CMD_DIRECTION_IN;
+-
+ 	rctx->flags = tmpl->flags;
+ 	rctx->flags |= EIP93_DECRYPT;
+ 
