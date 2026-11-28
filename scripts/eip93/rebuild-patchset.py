@@ -50,6 +50,25 @@ def main():
     if missing:
         raise SystemExit("Missing indexed patches:\n" + "\n".join(missing))
 
+    # Verify the documented file-to-patch provenance against actual patch headers.
+    expected_origins = {}
+    for _, filename, origins in GROUPS:
+        for origin in origins.split(","):
+            expected_origins.setdefault(origin, set()).add(f"{SOURCE_DIR}/{filename}")
+    for patch_file in originals:
+        origin = patch_file.name.split("-", 1)[0]
+        touched = set()
+        for line in patch_file.read_text(errors="replace").splitlines():
+            if line.startswith("--- a/"):
+                touched.add(line[6:].split("\\t", 1)[0])
+            elif line.startswith("+++ b/"):
+                touched.add(line[6:].split("\\t", 1)[0])
+        if touched != expected_origins.get(origin, set()):
+            raise SystemExit(
+                f"Patch provenance mismatch for {patch_file.name}: "
+                f"headers={sorted(touched)} expected={sorted(expected_origins.get(origin, set()))}"
+            )
+
     with tempfile.TemporaryDirectory(prefix="ponwrt-eip93-") as tmpdir:
         tmp = Path(tmpdir)
         kernel, pristine = tmp / "kernel", tmp / "pristine"
