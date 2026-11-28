@@ -27,7 +27,8 @@ Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
  		case DEV_PATH_PPPOE:
  			info->indev = path->dev;
 @@ -114,4 +115,5 @@ static void nft_dev_path_info(const struct net_device_path_stack *stack,
- 			if (path->type == DEV_PATH_DSA ||
+-			if (path->type == DEV_PATH_DSA) {
++			if (path->type == DEV_PATH_DSA ||
 +			    path->type == DEV_PATH_MTK_WDMA) {
  				i = stack->num_paths;
  				break;
